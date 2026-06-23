@@ -161,13 +161,13 @@ class SunatScraper:
         # Buscar numRnd en el HTML
         # Formato típico: <input type="hidden" name="numRnd" value="0.123456789" />
         match = re.search(
-            r'name=["']numRnd["'][^>]*value=["']([^"']+)["']',
+            r'''name=["']numRnd["'][^>]*value=["']([^"']+)["']''',
             html
         )
         if not match:
             # Intentar patrón alternativo: numRnd en JavaScript
             match = re.search(
-                r'numRnd\s*=\s*["']([^"']+)["']',
+                r'''numRnd\s*=\s*["']([^"']+)["']''',
                 html
             )
 
