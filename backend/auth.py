@@ -1,21 +1,20 @@
 """
-auth.py — Autenticación JWT + compatibilidad con Basic Auth + roles + rate limiting.
+auth.py — Autenticación JWT (solo Bearer token).
 
 Flujo:
 1. POST /api/auth/login con {username, password} → devuelve JWT token.
 2. Los endpoints protegen con dependencia get_current_user (Bearer JWT).
-3. Por compatibilidad, también se acepta Authorization Basic mientras se migra.
-4. Dependencia requiere_rol("admin") para endpoints de escritura.
-5. Rate limiting con slowapi en login.
+3. Dependencia requiere_rol("admin") para endpoints de escritura.
+4. Rate limiting con slowapi en login.
+
+SEGURIDAD: JWT_SECRET es obligatorio via variable de entorno.
 """
 
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer
+from fastapi.security import HTTPBearer
 from jose import JWTError, jwt
 import bcrypt as _bcrypt
 from sqlalchemy.orm import Session
@@ -24,12 +23,11 @@ from database import get_db
 from models import Usuario
 
 # ─── Configuración JWT ─────────────────────────────────────────────────────
-SECRET_KEY = os.getenv("JWT_SECRET", "redcorruptela_super_secret_key_change_in_prod")
+SECRET_KEY = os.environ["JWT_SECRET"]  # Obligatorio: sin default
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 horas
 
-# ─── Security schemes ──────────────────────────────────────────────────────
-security_basic = HTTPBasic(auto_error=False)
+# ─── Security scheme ────────────────────────────────────────────────────────
 security_bearer = HTTPBearer(auto_error=False)
 
 
@@ -93,7 +91,6 @@ def seed_usuario_admin(db: Session):
 
         existente = db.query(Usuario).filter(Usuario.username == username).first()
         if existente:
-            # Si la contraseña cambió o el hash es inválido, re-hashear
             try:
                 if not verificar_password(password, existente.password_hash):
                     existente.password_hash = hash_password(password)
@@ -114,44 +111,34 @@ def seed_usuario_admin(db: Session):
 def get_current_user(
     request: Request,
     db: Session = Depends(get_db),
-    basic: Optional[HTTPBasicCredentials] = Depends(security_basic),
-    bearer: Optional[str] = Depends(security_bearer),
+    bearer: str = Depends(security_bearer),
 ) -> Usuario:
     """
-    Obtiene el usuario autenticado desde:
-    1. JWT Bearer token (nuevo)
-    2. HTTP Basic Auth (compatibilidad)
+    Obtiene el usuario autenticado desde JWT Bearer token.
 
     Retorna el objeto Usuario o lanza 401.
     """
-    usuario = None
+    if not bearer:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Se requiere token de autenticación",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    # Intentar JWT primero
-    if bearer:
-        try:
-            payload = decodificar_token(bearer.credentials)
-            username = payload.get("sub")
-            usuario = db.query(Usuario).filter(
-                Usuario.username == username, Usuario.activo == True
-            ).first()
-        except Exception:
-            pass
-
-    # Fallback a Basic Auth (compatibilidad)
-    if not usuario and basic:
-        u = db.query(Usuario).filter(
-            Usuario.username == basic.username, Usuario.activo == True
+    try:
+        payload = decodificar_token(bearer.credentials)
+        username = payload.get("sub")
+        usuario = db.query(Usuario).filter(
+            Usuario.username == username, Usuario.activo == True
         ).first()
-        if u and verificar_password(basic.password, u.password_hash):
-            usuario = u
+    except Exception:
+        usuario = None
 
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas",
-            headers={
-                "WWW-Authenticate": "Bearer",
-            },
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     return usuario

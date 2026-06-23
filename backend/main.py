@@ -18,7 +18,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import re
 
-from database import get_db, init_db
+from database import get_db
 from models import Persona, Relacion, Usuario, Auditoria, Empresa, PersonaEmpresa, EmpresaEtiqueta
 from auth import (
     get_current_user, requiere_rol, crear_token,
@@ -27,7 +27,7 @@ from auth import (
 from crud import (
     crear_persona, obtener_persona_por_dni, buscar_personas,
     actualizar_persona, eliminar_persona,
-    crear_relacion, obtener_relaciones_directas, eliminar_relacion,
+    obtener_relaciones_directas,
     crear_o_obtener_etiqueta, listar_etiquetas,
     asignar_etiqueta, desasignar_etiqueta, personas_por_etiqueta,
     registrar_auditoria,
@@ -58,13 +58,21 @@ from schemas import (
     FichaEmpresaOut, BusquedaEmpresaOut,
     TagStats, EmpresaStats, StatsOut,
 )
+from services.relacion_service import (
+    crear_relacion_bidireccional,
+    eliminar_relacion_bidireccional,
+)
+from services.persona_service import (
+    crear_persona_con_etiqueta,
+    eliminar_persona_con_auditoria,
+    actualizar_persona_con_auditoria,
+)
 
 limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
     db = next(get_db())
     try:
         seed_usuario_admin(db)
@@ -118,8 +126,7 @@ def api_auth_me(user: Usuario = Depends(get_current_user)):
 @app.post("/api/personas", response_model=PersonaOut, status_code=status.HTTP_201_CREATED)
 def api_crear_persona(datos: PersonaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     try:
-        persona = crear_persona(db, datos)
-        registrar_auditoria(db, user.id, user.username, "CREATE", "Persona", persona.dni, datos.model_dump())
+        persona = crear_persona_con_etiqueta(db, datos, user.id, user.username)
         return persona
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
@@ -183,19 +190,17 @@ def api_obtener_persona(dni: str, db: Session = Depends(get_db), user: Usuario =
 
 @app.put("/api/personas/{dni}", response_model=PersonaOut)
 def api_actualizar_persona(dni: str, datos: PersonaUpdate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
-    persona = actualizar_persona(db, dni, datos)
+    persona = actualizar_persona_con_auditoria(db, dni, datos, user.id, user.username)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
-    registrar_auditoria(db, user.id, user.username, "UPDATE", "Persona", dni, datos.model_dump(exclude_unset=True))
     return persona
 
 
 @app.delete("/api/personas/{dni}", status_code=status.HTTP_204_NO_CONTENT)
 def api_eliminar_persona(dni: str, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
-    eliminado = eliminar_persona(db, dni)
+    eliminado = eliminar_persona_con_auditoria(db, dni, user.id, user.username)
     if not eliminado:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
-    registrar_auditoria(db, user.id, user.username, "DELETE", "Persona", dni)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -205,9 +210,8 @@ def api_eliminar_persona(dni: str, db: Session = Depends(get_db), user: Usuario 
 @app.post("/api/relaciones", status_code=status.HTTP_201_CREATED)
 def api_crear_relacion(datos: RelacionCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     try:
-        relacion = crear_relacion(db, datos)
-        registrar_auditoria(db, user.id, user.username, "CREATE", "Relacion", str(relacion.id), datos.model_dump())
-        return {"mensaje": "Relacion creada exitosamente", "id": relacion.id, "origen": relacion.origen.nombre_completo, "tipo": relacion.tipo_relacion, "destino": relacion.destino.nombre_completo}
+        resultado = crear_relacion_bidireccional(db, datos, user.id, user.username)
+        return resultado
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
@@ -228,9 +232,8 @@ def api_relaciones_por_dni(dni: str, db: Session = Depends(get_db), user: Usuari
 
 @app.delete("/api/relaciones/{relacion_id}", status_code=status.HTTP_204_NO_CONTENT)
 def api_eliminar_relacion(relacion_id: int, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
-    if not eliminar_relacion(db, relacion_id):
+    if not eliminar_relacion_bidireccional(db, relacion_id, user.id, user.username):
         raise HTTPException(status_code=404, detail="Relacion no encontrada")
-    registrar_auditoria(db, user.id, user.username, "DELETE", "Relacion", str(relacion_id))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

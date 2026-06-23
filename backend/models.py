@@ -27,6 +27,12 @@ class Persona(Base):
     """
     Representa a una persona física identificada por su DNI.
     El campo 'activo' permite baja lógica (no se borra realmente).
+
+    Índices recomendados (aplicar via scripts/migrate.py con pg_trgm):
+      CREATE INDEX IF NOT EXISTS idx_personas_nombre_trgm
+          ON personas USING GIN (nombres gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS idx_personas_apellido_paterno_trgm
+          ON personas USING GIN (apellido_paterno gin_trgm_ops);
     """
     __tablename__ = "personas"
 
@@ -195,6 +201,10 @@ class PersonaEtiqueta(Base):
 class Empresa(Base):
     """
     Persona jurídica identificada por su RUC.
+
+    Índices recomendados (aplicar via scripts/migrate.py con pg_trgm):
+      CREATE INDEX IF NOT EXISTS idx_empresas_nombre_trgm
+          ON empresas USING GIN (nombre gin_trgm_ops);
     """
     __tablename__ = "empresas"
 

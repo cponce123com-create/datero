@@ -1,77 +1,32 @@
 /**
- * app.js — Frontend de RedCorruptela
- * SPA con login, search, fichas, BD visor, empresas y vínculos.
+ * ui.js — Funciones de renderizado y manejo del DOM.
+ * 
+ * Contiene todas las funciones de interfaz: búsqueda, fichas,
+ * modales, árbol genealógico, importación, dashboard, etc.
  */
-(function () {
-"use strict";
 
-var A = "/api";
-
-/* ─── Auth JWT ─── */
-function getAuth() { return sessionStorage.getItem("rc_token"); }
-function setAuth(token, username, rol) {
-    sessionStorage.setItem("rc_token", token);
-    if (username) sessionStorage.setItem("rc_user", username);
-    if (rol) sessionStorage.setItem("rc_rol", rol);
-}
-function sl() { var e = document.getElementById("login-overlay"); if (e) e.classList.remove("hidden"); }
-function hl() { var e = document.getElementById("login-overlay"); if (e) e.classList.add("hidden"); }
-function logout() { sessionStorage.clear(); location.reload(); }
-function esAdmin() { return sessionStorage.getItem("rc_rol") === "admin"; }
-
-async function af(url, o) {
-    o = o || {};
-    var token = getAuth();
-    if (!token) { sl(); throw new Error("Sin sesion"); }
-    var h = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
-    if (o.headers) Object.assign(h, o.headers);
-    var r = await fetch(url, { method: o.method, headers: h, body: o.body });
-    if (r.status === 401) { sessionStorage.clear(); sl(); throw new Error("Sesion expirada"); }
-    if (!r.ok) { var d = await r.json().catch(function() { return {}; }); throw new Error(d.detail || "Error " + r.status); }
-    if (r.status === 204) return null;
-    return r.json();
-}
-
-/* Login */
-document.getElementById("form-login").addEventListener("submit", async function(e) {
-    e.preventDefault();
-    var u = document.getElementById("login-user").value.trim();
-    var p = document.getElementById("login-pass").value.trim();
-    if (!u || !p) return;
-    var btn = e.target.querySelector("button[type=submit]");
-    btn.disabled = true; btn.textContent = "Ingresando...";
-    try {
-        var r = await fetch(A + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: u, password: p }) });
-        if (!r.ok) { var ed = await r.json(); throw new Error(ed.detail || "Error"); }
-        var d = await r.json();
-        setAuth(d.access_token, d.username, d.rol);
-        hl();
-        if (d.rol === "lector") st("Modo lectura: solo puede ver datos", "info");
-        _init();
-    } catch (err) { st(err.message, "error"); }
-    btn.disabled = false; btn.textContent = "Ingresar";
-});
-
-/* Toast */
-var tt = null;
+/* ─── Toast ─── */
 function st(msg, type) {
     type = type || "info";
     var t = document.getElementById("toast");
     t.textContent = msg;
     t.className = "toast toast-" + type;
     t.classList.remove("hidden");
-    if (tt) clearTimeout(tt);
-    tt = setTimeout(function() { t.classList.add("hidden"); }, 4000);
+    if (AppState.get("toastTimer")) clearTimeout(AppState.get("toastTimer"));
+    AppState.set("toastTimer", setTimeout(function() { t.classList.add("hidden"); }, 4000));
 }
 
-/* Modals */
+/* ─── Modals ─── */
 function om(id) { document.getElementById(id).classList.remove("hidden"); }
 function cm(id) { document.getElementById(id).classList.add("hidden"); }
+
 document.addEventListener("click", function(e) {
     if (e.target.dataset.close) cm(e.target.dataset.close);
     if (e.target.classList.contains("modal-overlay")) { var m = e.target.closest(".modal"); if (m) m.classList.add("hidden"); }
 });
-document.addEventListener("keydown", function(e) { if (e.key === "Escape") document.querySelectorAll(".modal:not(.hidden)").forEach(function(m) { m.classList.add("hidden"); }); });
+document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") document.querySelectorAll(".modal:not(.hidden)").forEach(function(m) { m.classList.add("hidden"); });
+});
 
 function es(s) { if (!s) return ""; var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
@@ -79,17 +34,16 @@ function es(s) { if (!s) return ""; var d = document.createElement("div"); d.tex
 var si = document.getElementById("search-input");
 var sb = document.getElementById("search-btn");
 var sr = document.getElementById("search-results");
-var searchTimer = null;
-sb.addEventListener("click", function() { ds(true); });
 
+sb.addEventListener("click", function() { ds(true); });
 si.addEventListener("input", function(e) {
     var q = si.value.trim();
     if (q.length < 2) { sr.classList.add("hidden"); return; }
-    if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(function() { dsLive(q); }, 300);
+    if (AppState.get("searchTimer")) clearTimeout(AppState.get("searchTimer"));
+    AppState.set("searchTimer", setTimeout(function() { dsLive(q); }, 300));
 });
 si.addEventListener("keydown", function(e) {
-    if (e.key === "Enter") { if (searchTimer) clearTimeout(searchTimer); ds(true); }
+    if (e.key === "Enter") { if (AppState.get("searchTimer")) clearTimeout(AppState.get("searchTimer")); ds(true); }
     if (e.key === "Escape") { sr.classList.add("hidden"); }
 });
 document.addEventListener("click", function(e) {
@@ -130,17 +84,16 @@ async function ds(enter) {
 var esi = document.getElementById("search-empresa-input");
 var esb = document.getElementById("search-empresa-btn");
 var esr = document.getElementById("search-empresa-results");
-var empresaSearchTimer = null;
 
 esb.addEventListener("click", function() { dsEmpresa(); });
 esi.addEventListener("input", function(e) {
     var q = esi.value.trim();
     if (q.length < 2) { esr.classList.add("hidden"); return; }
-    if (empresaSearchTimer) clearTimeout(empresaSearchTimer);
-    empresaSearchTimer = setTimeout(function() { dsEmpresaLive(q); }, 300);
+    if (AppState.get("empresaSearchTimer")) clearTimeout(AppState.get("empresaSearchTimer"));
+    AppState.set("empresaSearchTimer", setTimeout(function() { dsEmpresaLive(q); }, 300));
 });
 esi.addEventListener("keydown", function(e) {
-    if (e.key === "Enter") { if (empresaSearchTimer) clearTimeout(empresaSearchTimer); dsEmpresa(); }
+    if (e.key === "Enter") { if (AppState.get("empresaSearchTimer")) clearTimeout(AppState.get("empresaSearchTimer")); dsEmpresa(); }
     if (e.key === "Escape") { esr.classList.add("hidden"); }
 });
 document.addEventListener("click", function(e) {
@@ -204,8 +157,6 @@ function rf(d) {
     if (d.parentescos_inferidos.length === 0) { h += '<p style="color:var(--color-text-secondary);font-size:0.9rem;">No se encontraron parentescos inferidos.</p>'; }
     else { h += '<div class="parentesco-list">'; d.parentescos_inferidos.forEach(function(inf) { h += '<div class="parentesco-card"><div class="parentesco-header"><span class="parentesco-badge">inferido</span><span class="parentesco-tipo">' + es(inf.tipo_parentesco) + ':</span><span class="parentesco-nombre" data-dni="' + es(inf.persona.dni) + '">' + es(inf.persona.nombre_completo) + '</span></div><div class="parentesco-camino">' + es(inf.camino) + '</div></div>'; }); h += '</div>'; }
     h += '</div>';
-
-    // EMPRESAS vinculadas (reemplaza a trabajos)
     h += '<div class="section"><div class="section-title">🏢 Empresas Vinculadas <span class="section-badge">' + (d.empresas ? d.empresas.length : 0) + '</span></div>';
     if (d.empresas && d.empresas.length > 0) {
         h += '<div class="relaciones-list">';
@@ -218,7 +169,6 @@ function rf(d) {
         h += '</div>';
     } else { h += '<p style="color:var(--color-text-secondary);font-size:0.9rem;">Sin empresas vinculadas.</p>'; }
     h += '</div>';
-
     h += '<div class="section"><div class="section-title">🏷 Etiquetas <span class="section-badge">' + d.etiquetas.length + '</span></div><div class="tags-list">';
     d.etiquetas.forEach(function(et) { h += '<div class="tag-item"><span class="tag-nombre">' + es(et.etiqueta.nombre) + '</span>'; if (et.observacion) h += '<span class="tag-obs" title="' + es(et.observacion) + '">' + es(et.observacion) + '</span>'; h += '<button class="tag-remove" data-etiqueta="' + es(et.etiqueta.nombre) + '" title="Quitar">✕</button></div>'; });
     h += '<button class="tag-add-btn" data-dni="' + es(p.dni) + '">+ Agregar etiqueta</button></div></div>';
@@ -257,8 +207,6 @@ function rfEmpresa(d) {
     h += '<button class="btn btn-ghost btn-sm btn-delete-empresa" data-ruc="' + es(e.ruc) + '">🗑 Eliminar</button>';
     h += '</div></div><div class="ficha-body">';
     if (e.notas) h += '<div class="ficha-notas">📝 ' + es(e.notas) + '</div>';
-
-    // Personas vinculadas
     h += '<div class="section"><div class="section-title">👥 Personas Vinculadas <span class="section-badge">' + d.personas_vinculadas.length + '</span></div>';
     if (d.personas_vinculadas.length === 0) {
         h += '<p style="color:var(--color-text-secondary);font-size:0.9rem;">Sin personas vinculadas.</p>';
@@ -272,14 +220,11 @@ function rfEmpresa(d) {
         h += '</div>';
     }
     h += '</div>';
-
-    // Etiquetas
     h += '<div class="section"><div class="section-title">🏷 Etiquetas <span class="section-badge">' + d.etiquetas.length + '</span></div><div class="tags-list">';
     d.etiquetas.forEach(function(et) { h += '<div class="tag-item"><span class="tag-nombre">' + es(et.etiqueta.nombre) + '</span>'; if (et.observacion) h += '<span class="tag-obs" title="' + es(et.observacion) + '">' + es(et.observacion) + '</span>'; h += '<button class="tag-remove-empresa" data-etiqueta="' + es(et.etiqueta.nombre) + '" title="Quitar">✕</button></div>'; });
     h += '<button class="tag-add-btn" data-ruc="' + es(e.ruc) + '">+ Agregar etiqueta</button></div></div>';
     h += '</div>';
     ef.innerHTML = h;
-
     ef.querySelectorAll(".relacion-nombre").forEach(function(el) { el.addEventListener("click", function() { cf(el.dataset.dni); }); });
     ef.querySelectorAll(".btn-desvincular-persona").forEach(function(btn) { btn.addEventListener("click", async function(e) { e.stopPropagation(); if (!confirm("Desvincular esta persona?")) return; try { await af(A + "/persona-empresa/" + btn.dataset.id, { method: "DELETE" }); st("Desvinculado", "success"); cfEmpresa(e.ruc); } catch (err) { st(err.message, "error"); } }); });
     ef.querySelectorAll(".tag-remove-empresa").forEach(function(btn) { btn.addEventListener("click", async function(e) { e.stopPropagation(); try { await af(A + "/empresas/" + e.ruc + "/etiquetas/" + encodeURIComponent(btn.dataset.etiqueta), { method: "DELETE" }); st("Etiqueta removida", "success"); cfEmpresa(e.ruc); } catch (err) { st(err.message, "error"); } }); });
@@ -294,16 +239,21 @@ window.cargarArbol = async function(dni) {
     c.classList.remove("hidden"); ct_.innerHTML = '<span class="spinner"></span> Cargando...';
     try {
         var d = await af(A + "/personas/" + dni + "/arbol?profundidad=3");
-        var t = "👤 " + d.raiz.nombre_completo + " (DNI: " + d.raiz.dni + ")\n"
-        if (d.ascendentes.length > 0) { t += "\n▲ ASCENDENTES:\n"; d.ascendentes.forEach(function(n) { t += fan(n, "", true); }); }
-        if (d.descendentes.length > 0) { t += "\n▼ DESCENDENTES:\n"; d.descendentes.forEach(function(n) { t += fan(n, "", false); }); }
+        var t = "👤 " + d.raiz.nombre_completo + " (DNI: " + d.raiz.dni + ")
+"
+        if (d.ascendentes.length > 0) { t += "
+▲ ASCENDENTES:
+"; d.ascendentes.forEach(function(n) { t += fan(n, "", true); }); }
+        if (d.descendentes.length > 0) { t += "
+▼ DESCENDENTES:
+"; d.descendentes.forEach(function(n) { t += fan(n, "", false); }); }
         ct_.textContent = t;
     } catch (err) { ct_.textContent = "Error: " + err.message; }
 };
 
 function fan(no, px, ia) {
-    var r = no.tipo_relacion ? "[" + no.tipo_relacion + "] " : "";
-        var l = px + (px ? "├─ " : "") + r + no.persona.nombre_completo + "\n";
+    var l = px + (px ? "├─ " : "") + r + no.persona.nombre_completo + "\n";
+";
     if (no.hijos && no.hijos.length > 0) { no.hijos.forEach(function(ch, i) { var il = i === no.hijos.length - 1; var np = px + (il ? "   " : "│  "); l += fan(ch, np, ia); }); }
     return l;
 }
@@ -311,7 +261,7 @@ function fan(no, px, ia) {
 /* ─── Empresa Modal ─── */
 document.getElementById("btn-nueva-empresa").addEventListener("click", function() {
     document.getElementById("form-empresa").reset();
-    window.editandoEmpresaRuc = null;
+    AppState.set("editandoEmpresaRuc", null);
     document.getElementById("modal-empresa-title").textContent = "Nueva Empresa";
     document.querySelector("#form-empresa button[type=submit]").textContent = "Guardar Empresa";
     om("modal-empresa");
@@ -326,12 +276,12 @@ document.getElementById("form-empresa").addEventListener("submit", async functio
         notas: document.getElementById("e-notas").value.trim() || null,
     };
     try {
-        if (window.editandoEmpresaRuc) {
-            await af(A + "/empresas/" + window.editandoEmpresaRuc, { method: "PUT", body: JSON.stringify(b) });
+        if (AppState.get("editandoEmpresaRuc")) {
+            await af(A + "/empresas/" + AppState.get("editandoEmpresaRuc"), { method: "PUT", body: JSON.stringify(b) });
             st("Empresa actualizada", "success");
             cm("modal-empresa");
             document.getElementById("form-empresa").reset();
-            window.editandoEmpresaRuc = null;
+            AppState.set("editandoEmpresaRuc", null);
             cfEmpresa(b.ruc);
         } else {
             await af(A + "/empresas", { method: "POST", body: JSON.stringify(b) });
@@ -346,10 +296,10 @@ document.getElementById("form-empresa").addEventListener("submit", async functio
 window.editarEmpresa = function(ruc) {
     document.getElementById("modal-empresa-title").textContent = "Editar Empresa";
     document.querySelector("#form-empresa button[type=submit]").textContent = "Guardar Cambios";
-    window.editandoEmpresaRuc = null;
+    AppState.set("editandoEmpresaRuc", null);
     af(A + "/empresas/" + ruc).then(function(d) {
         var e = d.empresa;
-        window.editandoEmpresaRuc = e.ruc;
+        AppState.set("editandoEmpresaRuc", e.ruc);
         document.getElementById("e-ruc").value = e.ruc;
         document.getElementById("e-nombre").value = e.nombre || "";
         document.getElementById("e-direccion").value = e.direccion || "";
@@ -421,10 +371,10 @@ window.editarPersona = function(dni) {
     var btn = document.querySelector("#form-persona button[type=submit]");
     btn.textContent = "Guardar Cambios";
     document.getElementById("p-dni").disabled = true;
-    window.editandoDni = null;
+    AppState.set("editandoDni", null);
     af(A + "/personas/" + dni).then(function(d) {
         var p = d.persona;
-        window.editandoDni = dni;
+        AppState.set("editandoDni", dni);
         document.getElementById("p-dni").value = p.dni;
         document.getElementById("p-nombres").value = p.nombres || "";
         document.getElementById("p-ap-paterno").value = p.apellido_paterno || "";
@@ -440,9 +390,9 @@ window.editarPersona = function(dni) {
 document.getElementById("form-persona").addEventListener("submit", async function(e) {
     e.preventDefault();
     var b = { nombres: document.getElementById("p-nombres").value.trim(), apellido_paterno: document.getElementById("p-ap-paterno").value.trim(), apellido_materno: document.getElementById("p-ap-materno").value.trim() || null, fecha_nacimiento: document.getElementById("p-fecha-nac").value || null, foto_url: document.getElementById("p-foto").value.trim() || null, notas: document.getElementById("p-notas").value.trim() || null };
-    if (editandoDni) {
+    if (AppState.get("editandoDni")) {
         b.dni = document.getElementById("p-dni").value.trim();
-        try { await af(A + "/personas/" + editandoDni, { method: "PUT", body: JSON.stringify(b) }); st("Persona actualizada", "success"); cm("modal-persona"); document.getElementById("form-persona").reset(); editandoDni = null; document.getElementById("modal-persona-title").textContent = "Nueva Persona"; document.querySelector("#form-persona button[type=submit]").textContent = "Guardar Persona"; document.getElementById("p-dni").disabled = false; cf(b.dni); }
+        try { await af(A + "/personas/" + AppState.get("editandoDni"), { method: "PUT", body: JSON.stringify(b) }); st("Persona actualizada", "success"); cm("modal-persona"); document.getElementById("form-persona").reset(); AppState.set("editandoDni", null); document.getElementById("modal-persona-title").textContent = "Nueva Persona"; document.querySelector("#form-persona button[type=submit]").textContent = "Guardar Persona"; document.getElementById("p-dni").disabled = false; cf(b.dni); }
         catch (err) { st(err.message, "error"); }
     } else {
         b.dni = document.getElementById("p-dni").value.trim();
@@ -460,8 +410,9 @@ document.getElementById("form-relacion").addEventListener("submit", async functi
 });
 
 /* ─── Header buttons ─── */
-document.getElementById("btn-nueva-persona").addEventListener("click", function() { document.getElementById("form-persona").reset(); editandoDni = null; document.getElementById("p-dni").disabled = false; document.getElementById("modal-persona-title").textContent = "Nueva Persona"; document.querySelector("#form-persona button[type=submit]").textContent = "Guardar Persona"; om("modal-persona"); });
+document.getElementById("btn-nueva-persona").addEventListener("click", function() { document.getElementById("form-persona").reset(); AppState.set("editandoDni", null); document.getElementById("p-dni").disabled = false; document.getElementById("modal-persona-title").textContent = "Nueva Persona"; document.querySelector("#form-persona button[type=submit]").textContent = "Guardar Persona"; om("modal-persona"); });
 document.getElementById("btn-nueva-relacion").addEventListener("click", function() { document.getElementById("form-relacion").reset(); om("modal-relacion"); });
+
 /* ─── Etiquetas List ─── */
 document.getElementById("btn-etiquetas").addEventListener("click", async function() {
     om("modal-lista-etiquetas");
@@ -481,7 +432,6 @@ document.getElementById("btn-etiquetas").addEventListener("click", async functio
                 try {
                     var pl = await af(A + "/etiquetas/" + encodeURIComponent(n) + "/personas");
                     var el = await af(A + "/etiquetas/" + encodeURIComponent(n) + "/empresas");
-                    var msg = "Personas: " + (pl ? pl.length : 0) + " | Empresas: " + (el ? el.length : 0);
                     if ((pl && pl.length === 0) && (el && el.length === 0)) { st('Ningun elemento con "' + n + '"', "info"); return; }
                     cm("modal-lista-etiquetas");
                     var items = [];
@@ -565,7 +515,8 @@ document.getElementById("form-importar").addEventListener("submit", async functi
     e.preventDefault();
     var raw = document.getElementById("csv-textarea").value.trim();
     if (!raw) return;
-    var lines = raw.split("\n");
+    var lines = raw.split("
+");
     var ps = [];
     for (var i = 0; i < lines.length; i++) { var ln = lines[i].trim(); if (!ln) continue; var p = ln.split(","); if (p.length < 3) continue; ps.push({ dni: (p[0]||"").trim(), nombres: (p[1]||"").trim(), apellido_paterno: (p[2]||"").trim(), apellido_materno: (p[3]||"").trim()||null, fecha_nacimiento: null, foto_url: null, notas: null }); }
     if (ps.length === 0) { st("No hay datos CSV validos", "error"); return; }
@@ -573,9 +524,10 @@ document.getElementById("form-importar").addEventListener("submit", async functi
     ob.disabled = true; ob.textContent = "Importando...";
     try {
         var r = await af(A + "/db/importar", { method: "POST", body: JSON.stringify(ps) });
-        var m = r.mensaje + "\nCreados: " + r.creados;
-          if (r.errores && r.errores.length > 0) m += "\nErrores: " + r.errores.length;
-        st(m, r.errores && r.errores.length > 0 ? "error" : "success");
+        var m = r.mensaje + "
+Creados: " + r.creados;
+        if (r.errores && r.errores.length > 0) m += "
+        if (r.errores && r.errores.length > 0) m += "\nErrores: " + r.errores.length;
         cm("modal-importar"); document.getElementById("csv-textarea").value = "";
     } catch (err) { st(err.message, "error"); }
     ob.disabled = false; ob.textContent = "Importar";
@@ -608,7 +560,7 @@ document.getElementById("form-importar-inteligente").addEventListener("submit", 
             html += "</small>";
         }
         if (r.errores && r.errores.length > 0) { html += '<br><small style="color:var(--color-danger);">Errores: ' + r.errores.slice(0,3).join(", ") + "</small>"; }
-        if (r.persona_dni) { html += "<br><button class=\"btn btn-outline btn-xs\" style=\"margin-top:8px;\" onclick=\"cm(\x27modal-importar-inteligente\x27); cf(\x27" + r.persona_dni + "\x27)\">Ver ficha de " + r.persona_dni + "</button>"; }
+        if (r.persona_dni) { html += '<br><button class="btn btn-outline btn-xs" style="margin-top:8px;" onclick="cm(\x27modal-importar-inteligente\x27); cf(\x27' + r.persona_dni + '\x27)">Ver ficha de ' + r.persona_dni + "</button>"; }
         div.innerHTML = html;
     } catch (err) { st(err.message, "error"); }
     btn.disabled = false; btn.textContent = "Importar Inteligentemente";
@@ -628,12 +580,10 @@ async function cargarDashboard() {
         h += '<div class="stat-card"><div class="stat-num">' + s.total_empresas + '</div><div class="stat-label">Empresas</div></div>';
         h += '<div class="stat-card"><div class="stat-num">' + s.total_persona_empresa + '</div><div class="stat-label">Vínculos</div></div>';
         h += '</div>';
-
         var chartsCount = 0;
         if (s.personas_por_etiqueta && s.personas_por_etiqueta.length > 0) chartsCount++;
         if (s.personas_por_empresa && s.personas_por_empresa.length > 0) chartsCount++;
         if (s.empresas_por_etiqueta && s.empresas_por_etiqueta.length > 0) chartsCount++;
-
         if (chartsCount > 0) {
             var cols = Math.min(chartsCount, 3);
             h += '<div style="display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:16px;">';
@@ -649,7 +599,6 @@ async function cargarDashboard() {
             h += '</div>';
         }
         ct.innerHTML = h;
-
         setTimeout(function() {
             if (document.getElementById("chart-tags")) {
                 var ctx1 = document.getElementById("chart-tags").getContext("2d");
@@ -667,7 +616,6 @@ async function cargarDashboard() {
     } catch (err) { ct.innerHTML = 'Error: ' + es(err.message); }
 }
 
-
 /* ─── Reset DB ─── */
 document.getElementById("btn-reset").addEventListener("click", function() {
     if (!esAdmin()) { st("Solo administradores pueden resetear", "error"); return; }
@@ -680,40 +628,20 @@ document.getElementById("btn-reset").addEventListener("click", function() {
 
 document.getElementById("reset-confirm-input").addEventListener("input", function() {
     var btn = document.getElementById("btn-reset-confirm");
-    if (this.value === "RESET") {
-        btn.disabled = false;
-        btn.style.opacity = "1";
-    } else {
-        btn.disabled = true;
-        btn.style.opacity = "0.5";
-    }
+    if (this.value === "RESET") { btn.disabled = false; btn.style.opacity = "1"; }
+    else { btn.disabled = true; btn.style.opacity = "0.5"; }
 });
 
 document.getElementById("btn-reset-confirm").addEventListener("click", async function() {
-    var btn = this;
-    btn.disabled = true;
-    btn.textContent = "Reseteando...";
+    var btn = this; btn.disabled = true; btn.textContent = "Reseteando...";
     try {
         var r = await af(A + "/db/reset", { method: "POST", body: JSON.stringify({ confirmacion: "RESET" }) });
-        st(r.mensaje, "success");
-        cm("modal-reset");
+        st(r.mensaje, "success"); cm("modal-reset");
         document.getElementById("empty-state").classList.remove("hidden");
         document.getElementById("persona-ficha").classList.add("hidden");
         document.getElementById("empresa-ficha").classList.add("hidden");
     } catch (err) { st(err.message, "error"); }
-    btn.disabled = false;
-    btn.textContent = "Resetear Todo";
+    btn.disabled = false; btn.textContent = "Resetear Todo";
     document.getElementById("reset-confirm-input").value = "";
     btn.style.opacity = "0.5";
 });
-
-/* Init */
-async function _init() {
-    try { await af(A + "/health"); console.log("✅ RedCorruptela API v0.3"); }
-    catch (err) { console.warn("⚠", err.message); sl(); }
-}
-
-/* Start */
-var editandoDni = null;
-if (getAuth()) { hl(); _init(); } else { sl(); }
-})();
