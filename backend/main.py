@@ -364,6 +364,50 @@ def api_todas_empresas(db: Session = Depends(get_db), user: Usuario = Depends(ge
     return listar_todas_empresas(db)
 
 
+@app.post("/api/empresas/enriquecer-todas")
+def api_enriquecer_todas_empresas(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Inicia el enriquecimiento de todas las empresas en background."""
+    global _progreso_enriquecer
+    if _progreso_enriquecer.get("activo"):
+        raise HTTPException(status_code=409, detail="Ya hay un enriquecimiento en curso")
+
+    _progreso_enriquecer = {
+        "activo": True,
+        "total": 0,
+        "actualizadas": 0,
+        "errores": [],
+        "mensaje": "Iniciando...",
+        "ruc_actual": "",
+    }
+
+    background_tasks.add_task(_ejecutar_enriquecimiento, db, user)
+    return {"mensaje": "Enriquecimiento iniciado en background", "total_empresas": len(listar_todas_empresas(db))}
+
+
+@app.get("/api/empresas/enriquecer-progreso")
+def api_enriquecer_progreso(user: Usuario = Depends(get_current_user)):
+    """Retorna el progreso del enriquecimiento en curso."""
+    global _progreso_enriquecer
+    p = _progreso_enriquecer
+    porcentaje = round((p["actualizadas"] / p["total"] * 100)) if p["total"] > 0 else 0
+    return {
+        "activo": p.get("activo", False),
+        "total": p.get("total", 0),
+        "actualizadas": p.get("actualizadas", 0),
+        "porcentaje": porcentaje,
+        "mensaje": p.get("mensaje", ""),
+        "ruc_actual": p.get("ruc_actual", ""),
+        "errores": p.get("errores", [])[-5:],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERSONA ↔ EMPRESA (vinculos)
+# ═══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/empresas/{ruc}", response_model=FichaEmpresaOut)
 def api_obtener_empresa(ruc: str, db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
     empresa = obtener_empresa_por_ruc(db, ruc)
@@ -528,50 +572,6 @@ def _ejecutar_enriquecimiento(db: Session, user: Usuario):
     registrar_auditoria(db, user.id, user.username, "UPDATE", "Empresa", "TODAS", {"accion": "enriquecer_todas_sunat", "procesadas": a, "errores": e})
 
 
-@app.post("/api/empresas/enriquecer-todas")
-def api_enriquecer_todas_empresas(
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
-    """Inicia el enriquecimiento de todas las empresas en background."""
-    global _progreso_enriquecer
-    if _progreso_enriquecer.get("activo"):
-        raise HTTPException(status_code=409, detail="Ya hay un enriquecimiento en curso")
-
-    _progreso_enriquecer = {
-        "activo": True,
-        "total": 0,
-        "actualizadas": 0,
-        "errores": [],
-        "mensaje": "Iniciando...",
-        "ruc_actual": "",
-    }
-
-    background_tasks.add_task(_ejecutar_enriquecimiento, db, user)
-    return {"mensaje": "Enriquecimiento iniciado en background", "total_empresas": len(listar_todas_empresas(db))}
-
-
-@app.get("/api/empresas/enriquecer-progreso")
-def api_enriquecer_progreso(user: Usuario = Depends(get_current_user)):
-    """Retorna el progreso del enriquecimiento en curso."""
-    global _progreso_enriquecer
-    p = _progreso_enriquecer
-    porcentaje = round((p["actualizadas"] / p["total"] * 100)) if p["total"] > 0 else 0
-    return {
-        "activo": p.get("activo", False),
-        "total": p.get("total", 0),
-        "actualizadas": p.get("actualizadas", 0),
-        "porcentaje": porcentaje,
-        "mensaje": p.get("mensaje", ""),
-        "ruc_actual": p.get("ruc_actual", ""),
-        "errores": p.get("errores", [])[-5:],
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PERSONA ↔ EMPRESA (vinculos)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/persona-empresa", status_code=status.HTTP_201_CREATED)
 def api_vincular_persona_empresa(datos: PersonaEmpresaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
