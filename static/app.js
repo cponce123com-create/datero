@@ -297,6 +297,8 @@ window.cargarArbol = async function(dni) {
         var t = "👤 " + d.raiz.nombre_completo + " (DNI: " + d.raiz.dni + ")\n"
         if (d.ascendentes.length > 0) { t += "\n▲ ASCENDENTES:\n"; d.ascendentes.forEach(function(n) { t += fan(n, "", true); }); }
         if (d.descendentes.length > 0) { t += "\n▼ DESCENDENTES:\n"; d.descendentes.forEach(function(n) { t += fan(n, "", false); }); }
+        ct_.textContent = t;
+    } catch (err) { ct_.textContent = "Error: " + err.message; }
 };
 
 function fan(no, px, ia) {
