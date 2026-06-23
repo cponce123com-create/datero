@@ -19,7 +19,7 @@ from slowapi.errors import RateLimitExceeded
 import re
 
 from database import get_db, init_db
-from models import Persona, Relacion, Usuario, Auditoria, Empresa, PersonaEmpresa
+from models import Persona, Relacion, Usuario, Auditoria, Empresa, PersonaEmpresa, EmpresaEtiqueta
 from auth import (
     get_current_user, requiere_rol, crear_token,
     verificar_password, seed_usuario_admin, hash_password,
