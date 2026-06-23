@@ -53,3 +53,33 @@ def init_db():
     Se llama al iniciar la aplicación.
     """
     Base.metadata.create_all(bind=engine)
+
+    # Migración: agregar UniqueConstraint en persona_etiqueta si no existe
+    try:
+        from sqlalchemy import text
+        conn = engine.connect()
+        # Eliminar duplicados existentes (conservar el primero)
+        conn.execute(text("""
+            DELETE FROM persona_etiqueta pe1 USING persona_etiqueta pe2
+            WHERE pe1.id < pe2.id
+              AND pe1.persona_id = pe2.persona_id
+              AND pe1.etiqueta_id = pe2.etiqueta_id
+        """))
+        # Agregar constraint si no existe
+        conn.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'uq_persona_etiqueta'
+                ) THEN
+                    ALTER TABLE persona_etiqueta
+                    ADD CONSTRAINT uq_persona_etiqueta
+                    UNIQUE (persona_id, etiqueta_id);
+                END IF;
+            END $$;
+        """))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # La tabla puede no existir aún en el primer deploy

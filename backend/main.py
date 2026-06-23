@@ -482,7 +482,7 @@ def api_importar_inteligente(
         dnis_existentes_etiqueta = set()
         if etiqueta_id and dnis_existentes:
             dnis_existentes_etiqueta = set(
-                row[0] for row in db.query(PE.persona_id).join(Persona, Persona.id == PE.persona_id).filter(
+                row[0] for row in db.query(Persona.dni).join(PE, PE.persona_id == Persona.id).filter(
                     Persona.dni.in_(list(dnis_existentes)), PE.etiqueta_id == etiqueta_id
                 ).all()
             )

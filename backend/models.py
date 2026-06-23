@@ -178,6 +178,10 @@ class PersonaEtiqueta(Base):
     persona = relationship("Persona", back_populates="etiquetas_asignadas")
     etiqueta = relationship("Etiqueta", lazy="selectin")
 
+    __table_args__ = (
+        UniqueConstraint("persona_id", "etiqueta_id", name="uq_persona_etiqueta"),
+    )
+
     def __repr__(self):
         return f"<PersonaEtiqueta(persona={self.persona_id}, etiqueta={self.etiqueta_id})>"
 
