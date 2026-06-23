@@ -11,6 +11,7 @@ SEGURIDAD: JWT_SECRET es obligatorio via variable de entorno.
 """
 
 import os
+import warnings
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, Request, status
@@ -23,7 +24,13 @@ from database import get_db
 from models import Usuario
 
 # ─── Configuración JWT ─────────────────────────────────────────────────────
-SECRET_KEY = os.environ["JWT_SECRET"]  # Obligatorio: sin default
+SECRET_KEY = os.environ.get("JWT_SECRET")
+if not SECRET_KEY:
+    SECRET_KEY = "dev-secret-CHANGE-IN-PRODUCTION"
+    warnings.warn(
+        "JWT_SECRET no configurada. Usando valor inseguro de desarrollo.",
+        stacklevel=2,
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 horas
 

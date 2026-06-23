@@ -33,7 +33,7 @@ document.getElementById("form-login").addEventListener("submit", async function(
         hl();
         if (d.rol === "lector") st("Modo lectura: solo puede ver datos", "info");
         _init();
-    } catch (err) { st(err.message, "error"); }
+    } catch (err) { console.error("[Login]", err); st(err.message, "error"); }
     btn.disabled = false; btn.textContent = "Ingresar";
 });
 
