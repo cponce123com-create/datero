@@ -334,12 +334,10 @@ def crear_empresa(db: Session, datos: EmpresaCreate) -> Empresa:
     if existente:
         raise ValueError(f"Ya existe una empresa con RUC {datos.ruc}")
 
-    empresa = Empresa(
-        ruc=datos.ruc,
-        nombre=datos.nombre,
-        direccion=datos.direccion,
-        notas=datos.notas,
-    )
+    # Usar model_dump para pasar automaticamente todos los campos
+    # (incluyendo los nuevos de SUNAT: estado, condicion, representante_legal, etc.)
+    campos = datos.model_dump(exclude_unset=False)
+    empresa = Empresa(**campos)
     db.add(empresa)
     db.commit()
     db.refresh(empresa)

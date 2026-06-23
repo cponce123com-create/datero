@@ -126,11 +126,39 @@ class EmpresaCreate(BaseModel):
     ruc: str = Field(..., min_length=11, max_length=11)
     nombre: str = Field(..., min_length=1, max_length=300)
     direccion: Optional[str] = None
+    estado: Optional[str] = None
+    condicion: Optional[str] = None
+    tipo_contribuyente: Optional[str] = None
+    nombre_comercial: Optional[str] = None
+    fecha_inscripcion: Optional[str] = None
+    fecha_inicio_actividades: Optional[str] = None
+    sistema_contabilidad: Optional[str] = None
+    actividad_comercio_exterior: Optional[str] = None
+    actividad_economica: Optional[str] = None
+    comprobantes_autorizados: Optional[str] = None
+    sistema_emision: Optional[str] = None
+    afiliado_ple: Optional[str] = None
+    representante_legal_dni: Optional[str] = None
+    representante_legal_nombre: Optional[str] = None
     notas: Optional[str] = None
 
 class EmpresaUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=1, max_length=300)
     direccion: Optional[str] = None
+    estado: Optional[str] = None
+    condicion: Optional[str] = None
+    tipo_contribuyente: Optional[str] = None
+    nombre_comercial: Optional[str] = None
+    fecha_inscripcion: Optional[str] = None
+    fecha_inicio_actividades: Optional[str] = None
+    sistema_contabilidad: Optional[str] = None
+    actividad_comercio_exterior: Optional[str] = None
+    actividad_economica: Optional[str] = None
+    comprobantes_autorizados: Optional[str] = None
+    sistema_emision: Optional[str] = None
+    afiliado_ple: Optional[str] = None
+    representante_legal_dni: Optional[str] = None
+    representante_legal_nombre: Optional[str] = None
     notas: Optional[str] = None
 
 class EmpresaOut(BaseModel):
@@ -138,6 +166,20 @@ class EmpresaOut(BaseModel):
     ruc: str
     nombre: str
     direccion: Optional[str] = None
+    estado: Optional[str] = None
+    condicion: Optional[str] = None
+    tipo_contribuyente: Optional[str] = None
+    nombre_comercial: Optional[str] = None
+    fecha_inscripcion: Optional[str] = None
+    fecha_inicio_actividades: Optional[str] = None
+    sistema_contabilidad: Optional[str] = None
+    actividad_comercio_exterior: Optional[str] = None
+    actividad_economica: Optional[str] = None
+    comprobantes_autorizados: Optional[str] = None
+    sistema_emision: Optional[str] = None
+    afiliado_ple: Optional[str] = None
+    representante_legal_dni: Optional[str] = None
+    representante_legal_nombre: Optional[str] = None
     notas: Optional[str] = None
     activo: bool
     creado_en: Optional[datetime] = None
@@ -147,6 +189,7 @@ class EmpresaBrief(BaseModel):
     id: int
     ruc: str
     nombre: str
+    estado: Optional[str] = None
     model_config = {"from_attributes": True}
 
 

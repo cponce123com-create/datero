@@ -144,9 +144,58 @@ def step_migrate_persona_trabajo():
         conn.close()
 
 
+def step_add_empresa_columns():
+    """Paso 4: Agregar columnas SUNAT a tabla empresas."""
+    print("[4/5] Agregando columnas SUNAT a empresas...")
+    conn = engine.connect()
+    try:
+        from sqlalchemy import text as sa_text
+        columnas = [
+            ("estado", "VARCHAR(50)"),
+            ("condicion", "VARCHAR(50)"),
+            ("tipo_contribuyente", "VARCHAR(100)"),
+            ("nombre_comercial", "VARCHAR(300)"),
+            ("fecha_inscripcion", "VARCHAR(20)"),
+            ("fecha_inicio_actividades", "VARCHAR(20)"),
+            ("sistema_contabilidad", "VARCHAR(100)"),
+            ("actividad_comercio_exterior", "VARCHAR(100)"),
+            ("actividad_economica", "VARCHAR(300)"),
+            ("comprobantes_autorizados", "VARCHAR(300)"),
+            ("sistema_emision", "VARCHAR(100)"),
+            ("afiliado_ple", "VARCHAR(5)"),
+            ("representante_legal_dni", "VARCHAR(20)"),
+            ("representante_legal_nombre", "VARCHAR(300)"),
+            ("actualizado_en", "TIMESTAMP WITH TIME ZONE DEFAULT NOW()"),
+        ]
+        for col_name, col_type in columnas:
+            try:
+                conn.execute(sa_text(
+                    f"ALTER TABLE empresas ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                ))
+                print(f"  ✓ Columna '{col_name}' agregada/verificada")
+            except Exception as e:
+                print(f"  ⚠ Columna '{col_name}': {e}")
+        conn.commit()
+        # Indice para representante legal
+        try:
+            conn.execute(sa_text(
+                "CREATE INDEX IF NOT EXISTS idx_empresas_rep_legal_dni "
+                "ON empresas (representante_legal_dni)"
+            ))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+        print("  ✓ Columnas SUNAT agregadas exitosamente")
+    except Exception as e:
+        conn.rollback()
+        print(f"  ⚠ Error: {e}")
+    finally:
+        conn.close()
+
+
 def step_create_indexes():
-    """Paso 4: Crear índices de búsqueda textual (opcional, requiere pg_trgm)."""
-    print("[4/4] Creando índices de búsqueda...")
+    """Paso 5: Crear índices de búsqueda textual (opcional, requiere pg_trgm)."""
+    print("[5/5] Creando índices de búsqueda...")
     conn = engine.connect()
     try:
         # Intentar crear extensión pg_trgm (puede fallar si no hay permisos)
@@ -193,6 +242,8 @@ def main():
     step_remove_duplicates()
     print()
     step_migrate_persona_trabajo()
+    print()
+    step_add_empresa_columns()
     print()
     step_create_indexes()
     print()

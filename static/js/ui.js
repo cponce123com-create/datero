@@ -221,7 +221,13 @@ window.cfEmpresa = cfEmpresa;
 function rfEmpresa(d) {
     var e = d.empresa, ef = document.getElementById("empresa-ficha");
     var h = "";
-    h += '<div class="ficha-header"><div><div class="ficha-nombre">🏢 ' + es(e.nombre) + '</div><div class="ficha-dni">RUC: ' + es(e.ruc) + '</div><div class="ficha-meta">';
+
+    // ── Header ──
+    h += '<div class="ficha-header"><div><div class="ficha-nombre">🏢 ' + es(e.nombre) + '</div><div class="ficha-dni">RUC: ' + es(e.ruc) + '</div>';
+    h += '<div class="ficha-meta">';
+    if (e.estado) h += '<span class="status-badge status-' + es(e.estado.toLowerCase()) + '">' + es(e.estado) + '</span>';
+    if (e.condicion) h += '<span>' + es(e.condicion) + '</span>';
+    if (e.tipo_contribuyente) h += '<span>' + es(e.tipo_contribuyente) + '</span>';
     if (e.direccion) h += '<span>📍 ' + es(e.direccion) + '</span>';
     h += '</div></div><div class="ficha-actions">';
     h += '<button class="btn btn-outline btn-sm" onclick="abrirEtiquetaEmpresa(\x27' + es(e.ruc) + '\x27)">🏷 Etiquetar</button>';
@@ -229,6 +235,50 @@ function rfEmpresa(d) {
     h += '<button class="btn btn-ghost btn-sm btn-delete-empresa" data-ruc="' + es(e.ruc) + '">🗑 Eliminar</button>';
     h += '</div></div><div class="ficha-body">';
     if (e.notas) h += '<div class="ficha-notas">📝 ' + es(e.notas) + '</div>';
+
+    // ── Datos SUNAT ──
+    h += '<div class="section"><div class="section-title">📊 Datos SUNAT</div><div class="sunat-grid">';
+    var sunatFields = [
+        { label: "Tipo Contribuyente", value: e.tipo_contribuyente },
+        { label: "Nombre Comercial", value: e.nombre_comercial },
+        { label: "Estado", value: e.estado },
+        { label: "Condición", value: e.condicion },
+        { label: "Dirección", value: e.direccion },
+        { label: "Fecha Inscripción", value: e.fecha_inscripcion },
+        { label: "Inicio Actividades", value: e.fecha_inicio_actividades },
+        { label: "Sistema Contabilidad", value: e.sistema_contabilidad },
+        { label: "Comercio Exterior", value: e.actividad_comercio_exterior },
+        { label: "Actividad Económica", value: e.actividad_economica },
+        { label: "Comprobantes", value: e.comprobantes_autorizados },
+        { label: "Sistema Emisión", value: e.sistema_emision },
+        { label: "Afiliado PLE", value: e.afiliado_ple },
+    ];
+    sunatFields.forEach(function(f) {
+        if (f.value) h += '<div class="sunat-field"><span class="sunat-label">' + es(f.label) + ':</span><span class="sunat-value">' + es(f.value) + '</span></div>';
+    });
+    h += '</div></div>';
+
+    // ── Representante Legal ──
+    if (e.representante_legal_dni) {
+        h += '<div class="section"><div class="section-title">👤 Representante Legal</div>';
+        h += '<div class="relacion-card" style="margin-top:8px;">';
+        h += '<div class="relacion-info">';
+        h += '<div class="relacion-nombre" data-dni="' + es(e.representante_legal_dni) + '">' + es(e.representante_legal_nombre || "—") + '</div>';
+        h += '<div class="relacion-certeza">DNI: ' + es(e.representante_legal_dni) + '</div>';
+        h += '</div>';
+        // Boton para vincular si no existe ya
+        var yaVinculado = d.personas_vinculadas.some(function(pv) {
+            return pv.persona.dni === e.representante_legal_dni && pv.cargo === "representante legal";
+        });
+        if (!yaVinculado) {
+            h += '<button class="btn btn-primary btn-sm" onclick="crearVinculoDesdeConsulta(\x27' + es(e.ruc) + '\x27, \x27' + es(e.representante_legal_dni) + '\x27)">🔗 Vincular como Rep. Legal</button>';
+        } else {
+            h += '<span style="color:var(--color-success);font-weight:500;">✅ Vinculado</span>';
+        }
+        h += '</div></div>';
+    }
+
+    // ── Personas Vinculadas ──
     h += '<div class="section"><div class="section-title">👥 Personas Vinculadas <span class="section-badge">' + d.personas_vinculadas.length + '</span></div>';
     if (d.personas_vinculadas.length === 0) {
         h += '<p style="color:var(--color-text-secondary);font-size:0.9rem;">Sin personas vinculadas.</p>';
@@ -242,12 +292,16 @@ function rfEmpresa(d) {
         h += '</div>';
     }
     h += '</div>';
+
+    // ── Etiquetas ──
     h += '<div class="section"><div class="section-title">🏷 Etiquetas <span class="section-badge">' + d.etiquetas.length + '</span></div><div class="tags-list">';
     d.etiquetas.forEach(function(et) { h += '<div class="tag-item"><span class="tag-nombre">' + es(et.etiqueta.nombre) + '</span>'; if (et.observacion) h += '<span class="tag-obs" title="' + es(et.observacion) + '">' + es(et.observacion) + '</span>'; h += '<button class="tag-remove-empresa" data-etiqueta="' + es(et.etiqueta.nombre) + '" title="Quitar">✕</button></div>'; });
     h += '<button class="tag-add-btn" data-ruc="' + es(e.ruc) + '">+ Agregar etiqueta</button></div></div>';
     h += '</div>';
     ef.innerHTML = h;
-    ef.querySelectorAll(".relacion-nombre").forEach(function(el) { el.addEventListener("click", function() { cf(el.dataset.dni); }); });
+
+    // ── Event listeners ──
+    ef.querySelectorAll(".relacion-nombre:not(.empresa-link)").forEach(function(el) { el.addEventListener("click", function() { cf(el.dataset.dni); }); });
     ef.querySelectorAll(".btn-desvincular-persona").forEach(function(btn) { btn.addEventListener("click", async function(e) { e.stopPropagation(); if (!confirm("Desvincular esta persona?")) return; try { await af(A + "/persona-empresa/" + btn.dataset.id, { method: "DELETE" }); st("Desvinculado", "success"); cfEmpresa(e.ruc); } catch (err) { st(err.message, "error"); } }); });
     ef.querySelectorAll(".tag-remove-empresa").forEach(function(btn) { btn.addEventListener("click", async function(e) { e.stopPropagation(); try { await af(A + "/empresas/" + e.ruc + "/etiquetas/" + encodeURIComponent(btn.dataset.etiqueta), { method: "DELETE" }); st("Etiqueta removida", "success"); cfEmpresa(e.ruc); } catch (err) { st(err.message, "error"); } }); });
     ef.querySelector(".tag-add-btn").addEventListener("click", function() { abrirEtiquetaEmpresa(e.ruc); });
@@ -285,12 +339,37 @@ document.getElementById("btn-nueva-empresa").addEventListener("click", function(
 
 document.getElementById("form-empresa").addEventListener("submit", async function(e) {
     e.preventDefault();
+
+    // Datos base del formulario visible
     var b = {
         ruc: document.getElementById("e-ruc").value.trim(),
         nombre: document.getElementById("e-nombre").value.trim(),
         direccion: document.getElementById("e-direccion").value.trim() || null,
         notas: document.getElementById("e-notas").value.trim() || null,
     };
+
+    // Agregar datos SUNAT desde la ultima consulta (si existe)
+    var consultaData = window._ultimaConsultaRuc;
+    if (consultaData && consultaData.numero === b.ruc) {
+        if (!b.direccion && consultaData.direccion) b.direccion = consultaData.direccion;
+        if (consultaData.estado) b.estado = consultaData.estado;
+        if (consultaData.condicion) b.condicion = consultaData.condicion;
+        if (consultaData.tipo_contribuyente) b.tipo_contribuyente = consultaData.tipo_contribuyente;
+        if (consultaData.nombre_comercial) b.nombre_comercial = consultaData.nombre_comercial;
+        if (consultaData.fecha_inscripcion) b.fecha_inscripcion = consultaData.fecha_inscripcion;
+        if (consultaData.fecha_inicio_actividades) b.fecha_inicio_actividades = consultaData.fecha_inicio_actividades;
+        if (consultaData.sistema_contabilidad) b.sistema_contabilidad = consultaData.sistema_contabilidad;
+        if (consultaData.actividad_comercio_exterior) b.actividad_comercio_exterior = consultaData.actividad_comercio_exterior;
+        if (consultaData.actividad_economica) b.actividad_economica = consultaData.actividad_economica;
+        if (consultaData.comprobantes_autorizados) b.comprobantes_autorizados = consultaData.comprobantes_autorizados;
+        if (consultaData.sistema_emision) b.sistema_emision = consultaData.sistema_emision;
+        if (consultaData.afiliado_ple) b.afiliado_ple = consultaData.afiliado_ple;
+        if (consultaData.representante_legal) {
+            b.representante_legal_dni = consultaData.representante_legal.dni;
+            b.representante_legal_nombre = consultaData.representante_legal.nombre;
+        }
+    }
+
     try {
         if (AppState.get("editandoEmpresaRuc")) {
             await af(A + "/empresas/" + AppState.get("editandoEmpresaRuc"), { method: "PUT", body: JSON.stringify(b) });
@@ -298,12 +377,14 @@ document.getElementById("form-empresa").addEventListener("submit", async functio
             cm("modal-empresa");
             document.getElementById("form-empresa").reset();
             AppState.set("editandoEmpresaRuc", null);
+            window._ultimaConsultaRuc = null;
             cfEmpresa(b.ruc);
         } else {
             await af(A + "/empresas", { method: "POST", body: JSON.stringify(b) });
             st("Empresa creada", "success");
             cm("modal-empresa");
             document.getElementById("form-empresa").reset();
+            window._ultimaConsultaRuc = null;
             cfEmpresa(b.ruc);
         }
     } catch (err) { st(err.message, "error"); }

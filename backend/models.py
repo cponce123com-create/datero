@@ -202,9 +202,14 @@ class Empresa(Base):
     """
     Persona jurídica identificada por su RUC.
 
+    Los campos de SUNAT se llenan automaticamente via SunatScraper.
+    El representante legal se cruza automaticamente con la tabla personas.
+
     Índices recomendados (aplicar via scripts/migrate.py con pg_trgm):
       CREATE INDEX IF NOT EXISTS idx_empresas_nombre_trgm
           ON empresas USING GIN (nombre gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS idx_empresas_rep_legal_dni
+          ON empresas (representante_legal_dni);
     """
     __tablename__ = "empresas"
 
@@ -212,24 +217,59 @@ class Empresa(Base):
     ruc = Column(String(11), unique=True, nullable=False, index=True,
                  comment="Registro Único del Contribuyente, 11 dígitos")
     nombre = Column(String(300), nullable=False,
-                    comment="Razón social o nombre comercial")
+                    comment="Razón social")
+
+    # ── Datos SUNAT ────────────────────────────────────────────────────
     direccion = Column(Text, nullable=True)
+    estado = Column(String(50), nullable=True, comment="ACTIVO, BAJA, etc.")
+    condicion = Column(String(50), nullable=True, comment="HABIDO, NO HABIDO")
+    tipo_contribuyente = Column(String(100), nullable=True)
+    nombre_comercial = Column(String(300), nullable=True)
+    fecha_inscripcion = Column(String(20), nullable=True)
+    fecha_inicio_actividades = Column(String(20), nullable=True)
+    sistema_contabilidad = Column(String(100), nullable=True)
+    actividad_comercio_exterior = Column(String(100), nullable=True)
+    actividad_economica = Column(String(300), nullable=True)
+    comprobantes_autorizados = Column(String(300), nullable=True)
+    sistema_emision = Column(String(100), nullable=True)
+    afiliado_ple = Column(String(5), nullable=True, comment="SI/NO")
+
+    # ── Representante Legal ────────────────────────────────────────────
+    representante_legal_dni = Column(
+        String(20), nullable=True, index=True,
+        comment="DNI del representante legal (para cruce automatico)"
+    )
+    representante_legal_nombre = Column(
+        String(300), nullable=True,
+        comment="Nombre del representante legal"
+    )
+
+    # ── Metadatos ──────────────────────────────────────────────────────
     notas = Column(Text, nullable=True)
     activo = Column(Boolean, default=True, comment="False = baja lógica")
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
+    actualizado_en = Column(DateTime(timezone=True),
+                            server_default=func.now(), onupdate=func.now())
 
-    # Personas vinculadas a esta empresa
+    # Relaciones
     personas_relacionadas = relationship(
         "PersonaEmpresa",
         back_populates="empresa",
         lazy="selectin",
     )
-    # Etiquetas asignadas a la empresa
     etiquetas_asignadas = relationship(
         "EmpresaEtiqueta",
         back_populates="empresa",
         lazy="selectin",
     )
+
+    @property
+    def tiene_representante_vinculado(self) -> bool:
+        """Verifica si ya existe un vinculo como representante legal."""
+        return any(
+            pe.cargo == "representante legal"
+            for pe in (self.personas_relacionadas or [])
+        )
 
     def __repr__(self):
         return f"<Empresa(ruc='{self.ruc}', nombre='{self.nombre}')>"
