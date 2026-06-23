@@ -607,7 +607,7 @@ document.getElementById("form-importar-inteligente").addEventListener("submit", 
             if (r.etiquetados > 0) html += "Etiquetados: " + r.etiquetados;
             html += "</small>";
         }
-        if (r.errores && r.errores.length > 0) { html += "<br><small style="color:var(--color-danger);">Errores: " + r.errores.slice(0,3).join(", ") + "</small>"; }
+        if (r.errores && r.errores.length > 0) { html += '<br><small style="color:var(--color-danger);">Errores: ' + r.errores.slice(0,3).join(", ") + "</small>"; }
         if (r.persona_dni) { html += "<br><button class="btn btn-outline btn-xs" style="margin-top:8px;" onclick="cm('modal-importar-inteligente'); cf('" + r.persona_dni + "')">Ver ficha de " + r.persona_dni + "</button>"; }
         div.innerHTML = html;
     } catch (err) { st(err.message, "error"); }
