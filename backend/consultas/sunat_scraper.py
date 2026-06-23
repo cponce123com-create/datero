@@ -18,7 +18,7 @@ import os
 import re
 import logging
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Any
 from datetime import timedelta
 
 import requests
@@ -82,7 +82,7 @@ class SunatScraper:
 
     # ── Método público ─────────────────────────────────────────────────
 
-    def consultar_ruc(self, ruc: str) -> Dict[str, Any]:
+    def consultar_ruc(self, ruc: str) -> dict:
         """
         Consulta datos de una empresa por RUC.
 
@@ -130,7 +130,7 @@ class SunatScraper:
 
     # ── Flujo interno ─────────────────────────────────────────────────
 
-    def _consultar(self, ruc: str) -> Dict[str, Any]:
+    def _consultar(self, ruc: str) -> dict:
         """Ejecuta el flujo completo de consulta."""
         num_rnd = self._obtener_num_rnd()
         html = self._enviar_consulta(ruc, num_rnd)
@@ -215,7 +215,7 @@ class SunatScraper:
 
         return html
 
-    def _parsear_html(self, html: str, ruc: str) -> Dict[str, Any]:
+    def _parsear_html(self, html: str, ruc: str) -> dict:
         """
         Paso 3: Parsea el HTML de la tabla de resultados.
 
@@ -323,7 +323,7 @@ class SunatScraper:
 
 
 # ─── Función helper para compatibilidad ────────────────────────────────────
-def consultar_ruc(ruc: str) -> Dict[str, Any]:
+def consultar_ruc(ruc: str) -> dict:
     """
     Función de compatibilidad con ConsultaPeru.
 
