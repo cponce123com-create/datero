@@ -324,3 +324,233 @@ def personas_por_etiqueta(db: Session, etiqueta_nombre: str) -> List[Persona]:
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMPRESAS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def crear_empresa(db: Session, datos: EmpresaCreate) -> Empresa:
+    """Crea una nueva empresa. Lanza ValueError si el RUC ya existe."""
+    existente = db.query(Empresa).filter(Empresa.ruc == datos.ruc).first()
+    if existente:
+        raise ValueError(f"Ya existe una empresa con RUC {datos.ruc}")
+
+    empresa = Empresa(
+        ruc=datos.ruc,
+        nombre=datos.nombre,
+        direccion=datos.direccion,
+        notas=datos.notas,
+    )
+    db.add(empresa)
+    db.commit()
+    db.refresh(empresa)
+    return empresa
+
+
+def obtener_empresa_por_ruc(db: Session, ruc: str) -> Optional[Empresa]:
+    """Busca una empresa por RUC exacto. Retorna None si no existe."""
+    return (
+        db.query(Empresa)
+        .filter(Empresa.ruc == ruc, Empresa.activo == True)
+        .first()
+    )
+
+
+def buscar_empresas(db: Session, query: str, limite: int = 20) -> List[Empresa]:
+    """Busca empresas cuyo nombre o RUC contengan el texto."""
+    patron = f"%{query}%"
+    return (
+        db.query(Empresa)
+        .filter(
+            Empresa.activo == True,
+            or_(
+                Empresa.ruc.ilike(patron),
+                Empresa.nombre.ilike(patron),
+            ),
+        )
+        .limit(limite)
+        .all()
+    )
+
+
+def listar_todas_empresas(db: Session) -> List[Empresa]:
+    """Lista todas las empresas activas."""
+    return db.query(Empresa).filter(Empresa.activo == True).order_by(Empresa.nombre).all()
+
+
+def actualizar_empresa(db: Session, ruc: str, datos: EmpresaUpdate) -> Optional[Empresa]:
+    """Actualiza campos de una empresa. Retorna None si no existe."""
+    empresa = obtener_empresa_por_ruc(db, ruc)
+    if not empresa:
+        return None
+
+    update_data = datos.model_dump(exclude_unset=True)
+    for campo, valor in update_data.items():
+        setattr(empresa, campo, valor)
+
+    db.commit()
+    db.refresh(empresa)
+    return empresa
+
+
+def eliminar_empresa(db: Session, ruc: str) -> bool:
+    """Baja logica: marca activo=False. Retorna True si existia."""
+    empresa = obtener_empresa_por_ruc(db, ruc)
+    if not empresa:
+        return False
+    empresa.activo = False
+    db.commit()
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERSONA ↔ EMPRESA (vinculos)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def vincular_persona_empresa(db: Session, datos: PersonaEmpresaCreate) -> PersonaEmpresa:
+    """Vincula una persona a una empresa con un cargo. Crea la empresa si no existe."""
+    persona = db.query(Persona).filter(Persona.dni == datos.persona_dni, Persona.activo == True).first()
+    if not persona:
+        raise ValueError(f"No existe persona con DNI {datos.persona_dni}")
+
+    empresa = db.query(Empresa).filter(Empresa.ruc == datos.empresa_ruc).first()
+    if not empresa:
+        empresa = Empresa(ruc=datos.empresa_ruc, nombre=f"Empresa {datos.empresa_ruc}")
+        db.add(empresa)
+        db.flush()
+
+    cargo = datos.cargo or "trabajador"
+
+    existente = (
+        db.query(PersonaEmpresa)
+        .filter(
+            PersonaEmpresa.persona_id == persona.id,
+            PersonaEmpresa.empresa_id == empresa.id,
+            PersonaEmpresa.cargo == cargo,
+        )
+        .first()
+    )
+    if existente:
+        raise ValueError(
+            f"{persona.nombre_completo} ya esta vinculado a {empresa.nombre} como '{cargo}'"
+        )
+
+    vinculo = PersonaEmpresa(
+        persona_id=persona.id,
+        empresa_id=empresa.id,
+        cargo=cargo,
+        fecha_desde=datos.fecha_desde,
+        fecha_hasta=datos.fecha_hasta,
+        observacion=datos.observacion,
+    )
+    db.add(vinculo)
+    db.commit()
+    db.refresh(vinculo)
+    return vinculo
+
+
+def desvincular_persona_empresa(db: Session, vinculo_id: int) -> bool:
+    """Elimina un vinculo persona-empresa por su ID."""
+    vinculo = db.query(PersonaEmpresa).filter(PersonaEmpresa.id == vinculo_id).first()
+    if not vinculo:
+        return False
+    db.delete(vinculo)
+    db.commit()
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMPRESA ETIQUETAS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def asignar_etiqueta_empresa(
+    db: Session, empresa_id: int, datos: EmpresaEtiquetaAssign
+) -> EmpresaEtiqueta:
+    """Asigna una etiqueta a una empresa (crea la etiqueta si no existe)."""
+    etiqueta = crear_o_obtener_etiqueta(db, datos.etiqueta_nombre)
+
+    existente = (
+        db.query(EmpresaEtiqueta)
+        .filter(
+            EmpresaEtiqueta.empresa_id == empresa_id,
+            EmpresaEtiqueta.etiqueta_id == etiqueta.id,
+        )
+        .first()
+    )
+    if existente:
+        raise ValueError(
+            f"La empresa ya tiene la etiqueta '{datos.etiqueta_nombre}'"
+        )
+
+    asignacion = EmpresaEtiqueta(
+        empresa_id=empresa_id,
+        etiqueta_id=etiqueta.id,
+        observacion=datos.observacion,
+    )
+    db.add(asignacion)
+    db.commit()
+    db.refresh(asignacion)
+    return asignacion
+
+
+def desasignar_etiqueta_empresa(db: Session, empresa_id: int, etiqueta_nombre: str) -> bool:
+    """Quita una etiqueta de una empresa. Retorna True si existia."""
+    etiqueta = db.query(Etiqueta).filter(Etiqueta.nombre == etiqueta_nombre).first()
+    if not etiqueta:
+        return False
+
+    asignacion = (
+        db.query(EmpresaEtiqueta)
+        .filter(
+            EmpresaEtiqueta.empresa_id == empresa_id,
+            EmpresaEtiqueta.etiqueta_id == etiqueta.id,
+        )
+        .first()
+    )
+    if not asignacion:
+        return False
+
+    db.delete(asignacion)
+    db.commit()
+    return True
+
+
+def empresas_por_etiqueta(db: Session, etiqueta_nombre: str) -> List[Empresa]:
+    """Lista todas las empresas que tienen una etiqueta determinada."""
+    return (
+        db.query(Empresa)
+        .join(EmpresaEtiqueta)
+        .join(Etiqueta)
+        .filter(
+            Etiqueta.nombre == etiqueta_nombre,
+            Empresa.activo == True,
+        )
+        .all()
+    )
+
+
+def personas_por_empresa(db: Session, empresa_id: int) -> List[Persona]:
+    """Lista todas las personas vinculadas a una empresa."""
+    return (
+        db.query(Persona)
+        .join(PersonaEmpresa)
+        .filter(
+            PersonaEmpresa.empresa_id == empresa_id,
+            Persona.activo == True,
+        )
+        .all()
+    )
+
+
+def empresas_por_persona(db: Session, persona_id: int) -> List[Empresa]:
+    """Lista todas las empresas vinculadas a una persona."""
+    return (
+        db.query(Empresa)
+        .join(PersonaEmpresa)
+        .filter(
+            PersonaEmpresa.persona_id == persona_id,
+            Empresa.activo == True,
+        )
+        .all()
+    )
+
+
