@@ -839,6 +839,32 @@ def api_auditoria(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# CONSULTA DNI / RUC (apiperu.dev)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/consultar/dni")
+def api_consultar_dni(dni: str = Query(..., min_length=8, max_length=8), user: Usuario = Depends(get_current_user)):
+    """Consulta datos de una persona por DNI usando apiperu.dev."""
+    try:
+        from consultas.reniec_sunat import ConsultaPeru
+        api = ConsultaPeru()
+        return api.consultar_dni(dni)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/consultar/ruc")
+def api_consultar_ruc(ruc: str = Query(..., min_length=11, max_length=11), user: Usuario = Depends(get_current_user)):
+    """Consulta datos de una empresa por RUC usando apiperu.dev."""
+    try:
+        from consultas.reniec_sunat import ConsultaPeru
+        api = ConsultaPeru()
+        return api.consultar_ruc(ruc)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # HEALTH
 # ═══════════════════════════════════════════════════════════════════════════════
 

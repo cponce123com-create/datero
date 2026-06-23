@@ -643,3 +643,34 @@ document.getElementById("btn-reset-confirm").addEventListener("click", async fun
     document.getElementById("reset-confirm-input").value = "";
     btn.style.opacity = "0.5";
 });
+
+/* ─── Consulta DNI (RENIEC) ─── */
+async function consultarDni() {
+    var dni = document.getElementById("p-dni").value.trim();
+    if (!dni || dni.length !== 8) { st("Ingrese un DNI de 8 dígitos", "error"); return; }
+    var btn = document.querySelector("[onclick='consultarDni()']");
+    btn.disabled = true; btn.textContent = "🔍...";
+    try {
+        var d = await af(A + "/consultar/dni?dni=" + encodeURIComponent(dni));
+        document.getElementById("p-nombres").value = d.nombres || "";
+        document.getElementById("p-ap-paterno").value = d.apellido_paterno || "";
+        document.getElementById("p-ap-materno").value = d.apellido_materno || "";
+        st("Datos cargados desde RENIEC", "success");
+    } catch (err) { st(err.message, "error"); }
+    btn.disabled = false; btn.textContent = "🔍 DNI";
+}
+
+/* ─── Consulta RUC (SUNAT) ─── */
+async function consultarRuc() {
+    var ruc = document.getElementById("e-ruc").value.trim();
+    if (!ruc || ruc.length !== 11) { st("Ingrese un RUC de 11 dígitos", "error"); return; }
+    var btn = document.querySelector("[onclick='consultarRuc()']");
+    btn.disabled = true; btn.textContent = "🔍...";
+    try {
+        var d = await af(A + "/consultar/ruc?ruc=" + encodeURIComponent(ruc));
+        document.getElementById("e-nombre").value = d.nombre_o_razon_social || d.nombre || "";
+        if (d.direccion) document.getElementById("e-direccion").value = d.direccion;
+        st("Datos cargados desde SUNAT", "success");
+    } catch (err) { st(err.message, "error"); }
+    btn.disabled = false; btn.textContent = "🔍 RUC";
+}
