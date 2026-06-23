@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RedCorruptela — Detección de Redes de Corrupción</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -41,6 +42,7 @@
                 <button id="btn-visorbd" class="btn btn-outline btn-sm">📊 BD</button>
                 <button id="btn-importar" class="btn btn-outline btn-sm">📥 Importar</button>
                 <button id="btn-importar-inteligente" class="btn btn-primary btn-sm">🧠 Importar</button>
+                <button id="btn-dashboard" class="btn btn-primary btn-sm">📊 Dashboard</button>
             </nav>
         </div>
     </header>
@@ -294,6 +296,20 @@
                     <button type="submit" class="btn btn-primary">Importar Inteligentemente</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: DASHBOARD ═══ -->
+    <div id="modal-dashboard" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>📊 Dashboard</h2>
+                <button class="modal-close" data-close="modal-dashboard">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="dashboard-content" class="loading-text">Cargando...</div>
+            </div>
         </div>
     </div>
 

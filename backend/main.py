@@ -366,6 +366,19 @@ def api_desasignar_etiqueta(dni: str, etiqueta_nombre: str, db: Session = Depend
     registrar_auditoria(db, user.id, user.username, "DELETE", "PersonaEtiqueta", f"{dni}/{etiqueta_nombre}")
 
 
+@app.put("/api/etiquetas/{etiqueta_id}", response_model=EtiquetaOut)
+def api_editar_etiqueta(etiqueta_id: int, datos: EtiquetaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    """Renombrar una etiqueta."""
+    from models import Etiqueta as ET
+    et = db.query(ET).filter(ET.id == etiqueta_id).first()
+    if not et: raise HTTPException(status_code=404, detail="Etiqueta no encontrada")
+    old_name = et.nombre
+    et.nombre = datos.nombre
+    db.commit()
+    registrar_auditoria(db, user.id, user.username, "UPDATE", "Etiqueta", f"{old_name} -> {datos.nombre}")
+    return et
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # VISOR DE BASE DE DATOS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -677,6 +690,41 @@ def api_auditoria(
     q = q.order_by(Auditoria.timestamp.desc()).limit(limite)
     resultados = q.all()
     return AuditoriaLista(resultados=[AuditoriaOut.model_validate(r) for r in resultados], total=len(resultados))
+
+
+# ═══ STATS ═══
+
+@app.get("/api/stats", response_model=dict)
+def api_stats(db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
+    """Estadísticas del dashboard."""
+    from models import Persona as P, Relacion as R, Etiqueta as ET, PersonaEtiqueta as PE, PersonaTrabajo as PT
+    total_personas = db.query(P).filter(P.activo == True).count()
+    total_relaciones = db.query(R).count()
+    total_trabajos = db.query(PT).count()
+
+    # Personas por etiqueta
+    tags_data = db.execute(text("""
+        SELECT e.nombre, COUNT(pe.id) as cnt FROM etiquetas e
+        JOIN persona_etiqueta pe ON pe.etiqueta_id = e.id
+        GROUP BY e.nombre ORDER BY cnt DESC LIMIT 10
+    """)).fetchall()
+    personas_por_etiqueta = [{"nombre": r[0], "cantidad": r[1]} for r in tags_data]
+
+    # Personas por empresa
+    empresa_data = db.execute(text("""
+        SELECT pt.empresa_nombre, COUNT(pt.id) as cnt FROM persona_trabajo pt
+        GROUP BY pt.empresa_nombre ORDER BY cnt DESC LIMIT 10
+    """)).fetchall()
+    personas_por_empresa = [{"empresa": r[0], "cantidad": r[1]} for r in empresa_data]
+
+    from sqlalchemy import text
+    return {
+        "total_personas": total_personas,
+        "total_relaciones": total_relaciones,
+        "total_trabajos": total_trabajos,
+        "personas_por_etiqueta": personas_por_etiqueta,
+        "personas_por_empresa": personas_por_empresa,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

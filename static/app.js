@@ -242,7 +242,7 @@ document.getElementById("form-etiqueta").addEventListener("submit", async functi
 /* Header */
 document.getElementById("btn-nueva-persona").addEventListener("click", function() { document.getElementById("form-persona").reset(); editandoDni = null; document.getElementById("p-dni").disabled = false; document.getElementById("modal-persona-title").textContent = "Nueva Persona"; document.querySelector("#form-persona button[type=submit]").textContent = "Guardar Persona"; om("modal-persona"); });
 document.getElementById("btn-nueva-relacion").addEventListener("click", function() { document.getElementById("form-relacion").reset(); om("modal-relacion"); });
-document.getElementById("btn-etiquetas").addEventListener("click", async function() { om("modal-lista-etiquetas"); var ct = document.getElementById("lista-etiquetas-content"); ct.innerHTML = '<p class="loading-text"><span class="spinner"></span> Cargando...</p>'; try { var ets = await af(A + "/etiquetas"); if (ets.length === 0) { ct.innerHTML = '<p class="no-results">No hay etiquetas.</p>'; return; } ct.innerHTML = ets.map(function(et) { return '<div class="etiqueta-list-item" data-nombre="' + es(et.nombre) + '"><span>🏷 <strong>' + es(et.nombre) + '</strong></span><span style="color:var(--color-text-secondary);font-size:0.82rem;">Click →</span></div>'; }).join(""); ct.querySelectorAll(".etiqueta-list-item").forEach(function(it) { it.addEventListener("click", async function() { var n = it.dataset.nombre; try { var pl = await af(A + "/etiquetas/" + encodeURIComponent(n) + "/personas"); if (pl.length === 0) { st('Ninguna persona con "' + n + '"', "info"); return; } cm("modal-lista-etiquetas"); if (pl.length === 1) { cf(pl[0].dni); return; } sr.innerHTML = pl.map(function(p) { return '<div class="search-result-item" data-dni="' + p.dni + '"><span><strong>' + es(p.nombre_completo) + '</strong></span><span class="search-result-dni">DNI: ' + es(p.dni) + '</span></div>'; }).join(""); sr.querySelectorAll(".search-result-item").forEach(function(el) { el.addEventListener("click", function() { sr.classList.add("hidden"); cf(el.dataset.dni); }); }); sr.classList.remove("hidden"); } catch (err) { st(err.message, "error"); } }); }); } catch (err) { ct.innerHTML = '<p class="no-results">Error: ' + es(err.message) + '</p>'; } });
+document.getElementById("btn-etiquetas").addEventListener("click", async function() { om("modal-lista-etiquetas"); var ct = document.getElementById("lista-etiquetas-content"); ct.innerHTML = '<p class="loading-text"><span class="spinner"></span> Cargando...</p>'; try { var ets = await af(A + "/etiquetas"); if (ets.length === 0) { ct.innerHTML = '<p class="no-results">No hay etiquetas.</p>'; return; } ct.innerHTML = ets.map(function(et) { return '<div class="etiqueta-list-item" data-nombre="' + es(et.nombre) + '"><span>🏷 <strong>' + es(et.nombre) + '</strong></span><button class="btn-edit-tag btn btn-xs btn-ghost" data-id="' + et.id + '" data-nombre="' + es(et.nombre) + '">✏️</button><span style="color:var(--color-text-secondary);font-size:0.82rem;">Click →</span></div>'; }).join(""); ct.querySelectorAll(".etiqueta-list-item").forEach(function(it) { it.addEventListener("click", async function() { var n = it.dataset.nombre; try { var pl = await af(A + "/etiquetas/" + encodeURIComponent(n) + "/personas"); if (pl.length === 0) { st('Ninguna persona con "' + n + '"', "info"); return; } cm("modal-lista-etiquetas"); if (pl.length === 1) { cf(pl[0].dni); return; } sr.innerHTML = pl.map(function(p) { return '<div class="search-result-item" data-dni="' + p.dni + '"><span><strong>' + es(p.nombre_completo) + '</strong></span><span class="search-result-dni">DNI: ' + es(p.dni) + '</span></div>'; }).join(""); sr.querySelectorAll(".search-result-item").forEach(function(el) { el.addEventListener("click", function() { sr.classList.add("hidden"); cf(el.dataset.dni); }); }); sr.classList.remove("hidden"); } catch (err) { st(err.message, "error"); } }); }); ct.querySelectorAll(".btn-edit-tag").forEach(function(btn) { btn.addEventListener("click", async function(e) { e.stopPropagation(); var nuevo = prompt("Nuevo nombre para esta etiqueta:", btn.dataset.nombre); if (!nuevo || nuevo === btn.dataset.nombre) return; try { await af(A + "/etiquetas/" + btn.dataset.id, { method: "PUT", body: JSON.stringify({ nombre: nuevo }) }); st("Etiqueta renombrada", "success"); document.getElementById("btn-etiquetas").click(); } catch (err) { st(err.message, "error"); } }); }); } catch (err) { ct.innerHTML = '<p class="no-results">Error: ' + es(err.message) + '</p>'; } });
 
 /* DB Visor */
 document.getElementById("btn-visorbd").addEventListener("click", function() { cv(); });
@@ -319,6 +319,65 @@ document.getElementById("form-importar-inteligente").addEventListener("submit", 
     } catch (err) { st(err.message, "error"); }
     btn.disabled = false; btn.textContent = "Importar Inteligentemente";
 });
+
+/* Dashboard */
+document.getElementById("btn-dashboard").addEventListener("click", function() { cargarDashboard(); });
+
+async function cargarDashboard() {
+    om("modal-dashboard");
+    var ct = document.getElementById("dashboard-content");
+    ct.innerHTML = '<span class="spinner"></span> Cargando stats...';
+    try {
+        var s = await af(A + "/stats");
+        var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">';
+        h += '<div class="stat-card"><div class="stat-num">' + s.total_personas + '</div><div class="stat-label">Personas</div></div>';
+        h += '<div class="stat-card"><div class="stat-num">' + s.total_relaciones + '</div><div class="stat-label">Relaciones</div></div>';
+        h += '<div class="stat-card"><div class="stat-num">' + s.total_trabajos + '</div><div class="stat-label">Trabajos</div></div>';
+        h += '<div class="stat-card"><div class="stat-num">' + s.personas_por_etiqueta.length + '</div><div class="stat-label">Etiquetas</div></div>';
+        h += '</div>';
+
+        if (s.personas_por_etiqueta.length > 0) {
+            h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
+            h += '<div><h4 style="margin-bottom:8px;">Personas por Etiqueta</h4><canvas id="chart-tags" height="200"></canvas></div>';
+            h += '<div><h4 style="margin-bottom:8px;">Personas por Empresa</h4><canvas id="chart-empresas" height="200"></canvas></div>';
+            h += '</div>';
+        }
+        ct.innerHTML = h;
+
+        setTimeout(function() {
+            if (document.getElementById("chart-tags")) {
+                var ctx1 = document.getElementById("chart-tags").getContext("2d");
+                new Chart(ctx1, {
+                    type: "bar",
+                    data: {
+                        labels: s.personas_por_etiqueta.map(function(x){return x.nombre.substring(0,20)}),
+                        datasets: [{
+                            label: "Personas",
+                            data: s.personas_por_etiqueta.map(function(x){return x.cantidad}),
+                            backgroundColor: "rgba(37,99,235,0.7)"
+                        }]
+                    },
+                    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                });
+            }
+            if (document.getElementById("chart-empresas") && s.personas_por_empresa.length > 0) {
+                var ctx2 = document.getElementById("chart-empresas").getContext("2d");
+                new Chart(ctx2, {
+                    type: "bar",
+                    data: {
+                        labels: s.personas_por_empresa.map(function(x){return x.empresa.substring(0,25)}),
+                        datasets: [{
+                            label: "Personas",
+                            data: s.personas_por_empresa.map(function(x){return x.cantidad}),
+                            backgroundColor: "rgba(99,102,241,0.7)"
+                        }]
+                    },
+                    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                });
+            }
+        }, 200);
+    } catch (err) { ct.innerHTML = 'Error: ' + es(err.message); }
+}
 
 /* Init */
 async function _init() {
