@@ -10,3 +10,13 @@ slowapi>=0.1.8
 python-multipart>=0.0.6
 alembic>=1.13.0
 requests>=2.28.0
+
+# SUNAT Scraper
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+cachetools>=5.3.0
+# Testing
+pytest>=7.4.0
+httpx>=0.25.0
+# SUNAT Scraper (ya debe estar requests por apiperu)
+# requests>=2.28.0 ya incluido

@@ -839,7 +839,7 @@ def api_auditoria(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CONSULTA DNI / RUC (apiperu.dev)
+# CONSULTA DNI (apiperu.dev)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/consultar/dni")
@@ -853,15 +853,22 @@ def api_consultar_dni(dni: str = Query(..., min_length=8, max_length=8), user: U
         raise HTTPException(status_code=502, detail=str(e))
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONSULTA RUC (SunatScraper)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 @app.get("/api/consultar/ruc")
+@app.get("/api/consultar-ruc/{ruc}")
 def api_consultar_ruc(ruc: str = Query(..., min_length=11, max_length=11), user: Usuario = Depends(get_current_user)):
-    """Consulta datos de una empresa por RUC usando apiperu.dev."""
+    """Consulta datos de una empresa por RUC usando scraper directo de SUNAT."""
     try:
-        from consultas.reniec_sunat import ConsultaPeru
-        api = ConsultaPeru()
-        return api.consultar_ruc(ruc)
+        from consultas.sunat_scraper import SunatScraper, SunatScraperError
+        scraper = SunatScraper()
+        return scraper.consultar_ruc(ruc)
+    except SunatScraperError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=f"Error al consultar SUNAT: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

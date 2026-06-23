@@ -1,0 +1,342 @@
+"""
+sunat_scraper.py — Scraper de SUNAT para consulta gratuita de RUC.
+
+Reemplaza la dependencia de apiperu.dev consultando directamente
+el portal público de SUNAT (e-consultaruc).
+
+Flujo:
+  1. GET https://e-consultaruc.sunat.gob.pe/ → obtiene cookie y numRnd
+  2. POST con numRnd + RUC → obtiene HTML con datos
+  3. BeautifulSoup parsea la tabla de resultados
+
+Requerimientos: requests, beautifulsoup4, lxml, cachetools
+
+Documentación técnica: ver docs/SUNAT_SCRAPER.md
+"""
+
+import os
+import re
+import logging
+import time
+from typing import Optional, Dict, Any
+from datetime import timedelta
+
+import requests
+from bs4 import BeautifulSoup
+from cachetools import TTLCache
+
+# ─── Logger ────────────────────────────────────────────────────────────────
+logger = logging.getLogger("sunat_scraper")
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+))
+if not logger.handlers:
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
+# ─── Constantes ────────────────────────────────────────────────────────────
+BASE_URL = "https://e-consultaruc.sunat.gob.pe"
+TIMEOUT = 30
+MAX_RETRIES = 3
+CACHE_TTL = timedelta(hours=24)
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+
+# ─── Caché ─────────────────────────────────────────────────────────────────
+_cache = TTLCache(maxsize=256, ttl=CACHE_TTL.total_seconds())
+
+# ─── Excepción ─────────────────────────────────────────────────────────────
+class SunatScraperError(Exception):
+    """Error controlado del scraper SUNAT. No rompe la aplicación."""
+    pass
+
+
+class CaptchaDetectedError(SunatScraperError):
+    """SUNAT devolvió un CAPTCHA o bloqueó la consulta."""
+    pass
+
+
+# ─── Scraper ───────────────────────────────────────────────────────────────
+class SunatScraper:
+    """
+    Scraper oficial de SUNAT para consulta de RUC.
+
+    Uso:
+        scraper = SunatScraper()
+        data = scraper.consultar_ruc("20123456789")
+
+    Retorna dict con mismos campos que ConsultaPeru.consultar_ruc().
+    """
+
+    def __init__(self):
+        self._session = requests.Session()
+        self._session.headers.update({
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "es-PE,es;q=0.9,en;q=0.8",
+        })
+
+    # ── Método público ─────────────────────────────────────────────────
+
+    def consultar_ruc(self, ruc: str) -> Dict[str, Any]:
+        """
+        Consulta datos de una empresa por RUC.
+
+        Args:
+            ruc: RUC de 11 dígitos.
+
+        Returns:
+            Dict con datos normalizados (mismo formato que ConsultaPeru).
+
+        Raises:
+            SunatScraperError: Error controlado.
+            CaptchaDetectedError: SUNAT bloqueó la consulta.
+        """
+        ruc = ruc.strip()
+        if not ruc.isdigit() or len(ruc) != 11:
+            raise SunatScraperError("RUC debe tener 11 dígitos numéricos")
+
+        # Verificar caché
+        cache_key = f"ruc_{ruc}"
+        if cache_key in _cache:
+            logger.info(f"Cache hit para RUC {ruc}")
+            return _cache[cache_key]
+
+        # Intentar con reintentos
+        last_error = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                logger.info(f"Consultando RUC {ruc} (intento {attempt}/{MAX_RETRIES})")
+                data = self._consultar(ruc)
+                _cache[cache_key] = data
+                logger.info(f"RUC {ruc} consultado exitosamente")
+                return data
+            except (CaptchaDetectedError, SunatScraperError) as e:
+                last_error = e
+                if isinstance(e, CaptchaDetectedError):
+                    logger.warning(f"CAPTCHA detectado para RUC {ruc}")
+                    break  # No reintentar si hay CAPTCHA
+                logger.warning(f"Error en intento {attempt}: {e}")
+                if attempt < MAX_RETRIES:
+                    wait = 2 ** attempt
+                    logger.info(f"Esperando {wait}s antes de reintentar...")
+                    time.sleep(wait)
+
+        raise last_error or SunatScraperError("No se pudo consultar el RUC")
+
+    # ── Flujo interno ─────────────────────────────────────────────────
+
+    def _consultar(self, ruc: str) -> Dict[str, Any]:
+        """Ejecuta el flujo completo de consulta."""
+        num_rnd = self._obtener_num_rnd()
+        html = self._enviar_consulta(ruc, num_rnd)
+        return self._parsear_html(html, ruc)
+
+    def _obtener_num_rnd(self) -> str:
+        """
+        Paso 1: Obtiene el parámetro numRnd desde la página inicial de SUNAT.
+
+        GET https://e-consultaruc.sunat.gob.pe/
+        → Extrae numRnd del formulario oculto.
+        """
+        try:
+            resp = self._session.get(
+                BASE_URL + "/",
+                timeout=TIMEOUT,
+            )
+            resp.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise SunatScraperError(f"Error al obtener página inicial: {e}")
+
+        html = resp.text
+
+        # Detectar CAPTCHA o bloqueo
+        if self._es_captcha(html):
+            raise CaptchaDetectedError("SUNAT requiere CAPTCHA")
+
+        # Buscar numRnd en el HTML
+        # Formato típico: <input type="hidden" name="numRnd" value="0.123456789" />
+        match = re.search(
+            r'name=["']numRnd["'][^>]*value=["']([^"']+)["']',
+            html
+        )
+        if not match:
+            # Intentar patrón alternativo: numRnd en JavaScript
+            match = re.search(
+                r'numRnd\s*=\s*["']([^"']+)["']',
+                html
+            )
+
+        if not match:
+            raise SunatScraperError(
+                "No se pudo obtener numRnd. "
+                "SUNAT puede haber cambiado su página."
+            )
+
+        num_rnd = match.group(1)
+        logger.debug(f"numRnd obtenido: {num_rnd[:20]}...")
+        return num_rnd
+
+    def _enviar_consulta(self, ruc: str, num_rnd: str) -> str:
+        """
+        Paso 2: Envía el formulario de consulta con el RUC.
+
+        POST https://e-consultaruc.sunat.gob.pe/
+        → datos: numRnd, ruc, accion=buscarPorRuc
+        """
+        data = {
+            "accion": "buscarPorRuc",
+            "numRnd": num_rnd,
+            "ruc": ruc,
+        }
+
+        try:
+            resp = self._session.post(
+                BASE_URL + "/",
+                data=data,
+                timeout=TIMEOUT,
+            )
+            resp.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise SunatScraperError(f"Error al consultar RUC {ruc}: {e}")
+
+        html = resp.text
+
+        if self._es_captcha(html):
+            raise CaptchaDetectedError("SUNAT requiere CAPTCHA")
+
+        # Verificar que la respuesta contenga datos (no mensaje de error)
+        if "No se encontraron resultados" in html or "no existe" in html.lower():
+            raise SunatScraperError(f"No se encontraron datos para el RUC {ruc}")
+
+        return html
+
+    def _parsear_html(self, html: str, ruc: str) -> Dict[str, Any]:
+        """
+        Paso 3: Parsea el HTML de la tabla de resultados.
+
+        Extrae campos del formato típico de SUNAT.
+        """
+        soup = BeautifulSoup(html, "lxml")
+
+        data = {
+            "numero": ruc,
+            "nombre_o_razon_social": "",
+            "tipo_contribuyente": "",
+            "nombre_comercial": "",
+            "estado": "",
+            "condicion": "",
+            "direccion": "",
+            "departamento": "",
+            "provincia": "",
+            "distrito": "",
+            "fecha_inscripcion": "",
+            "fecha_inicio_actividades": "",
+            "sistema_contabilidad": "",
+            "actividad_comercio_exterior": "",
+            "actividad_economica": "",
+            "comprobantes_autorizados": "",
+            "sistema_emision": "",
+            "afiliado_ple": "",
+        }
+
+        # Buscar todas las tablas en la página
+        tablas = soup.find_all("table")
+
+        for tabla in tablas:
+            filas = tabla.find_all("tr")
+            for fila in filas:
+                celdas = fila.find_all(["td", "th"])
+                texto_celdas = [
+                    celda.get_text(strip=True) for celda in celdas
+                ]
+
+                if len(texto_celdas) < 2:
+                    continue
+
+                label = texto_celdas[0].lower()
+                valor = texto_celdas[1] if len(texto_celdas) > 1 else ""
+
+                # Mapeo de campos SUNAT → nuestro formato
+                if "razón social" in label or "razon social" in label:
+                    data["nombre_o_razon_social"] = valor
+                elif "nombre comercial" in label:
+                    data["nombre_comercial"] = valor
+                elif "tipo de contribuyente" in label:
+                    data["tipo_contribuyente"] = valor
+                elif "estado" in label and "contribuyente" not in label:
+                    data["estado"] = valor
+                elif "condición" in label or "condicion" in label:
+                    data["condicion"] = valor
+                elif "dirección" in label or "direccion" in label:
+                    # Puede incluir dirección completa
+                    data["direccion"] = valor
+                    # Intentar extraer ubigeo si está en celdas adicionales
+                    if len(texto_celdas) >= 5:
+                        data["departamento"] = texto_celdas[2]
+                        data["provincia"] = texto_celdas[3]
+                        data["distrito"] = texto_celdas[4]
+                elif "inscripción" in label or "inscripcion" in label:
+                    data["fecha_inscripcion"] = valor
+                elif "inicio de actividades" in label:
+                    data["fecha_inicio_actividades"] = valor
+                elif "sistema de contabilidad" in label:
+                    data["sistema_contabilidad"] = valor
+                elif "comercio exterior" in label:
+                    data["actividad_comercio_exterior"] = valor
+                elif "actividad" in label and "económica" in label:
+                    data["actividad_economica"] = valor
+                elif "comprobante" in label:
+                    data["comprobantes_autorizados"] = valor
+                elif "sistema de emisión" in label or "sistema de emision" in label:
+                    data["sistema_emision"] = valor
+                elif "ple" in label:
+                    data["afiliado_ple"] = valor
+
+        # Si no se encontró razón social, intentar buscar en <strong> o <h3>
+        if not data["nombre_o_razon_social"]:
+            for tag in soup.find_all(["strong", "h3", "h4"]):
+                texto = tag.get_text(strip=True)
+                if texto and len(texto) > 5 and not texto.startswith("http"):
+                    data["nombre_o_razon_social"] = texto
+                    break
+
+        return data
+
+    def _es_captcha(self, html: str) -> bool:
+        """Detecta si SUNAT devolvió un CAPTCHA."""
+        indicadores = [
+            "captcha",
+            "recaptcha",
+            "g-recaptcha",
+            "cf-challenge",
+            "cloudflare",
+            "Access denied",
+            "Please enable JavaScript",
+        ]
+        html_lower = html.lower()
+        return any(ind in html_lower for ind in indicadores)
+
+
+# ─── Función helper para compatibilidad ────────────────────────────────────
+def consultar_ruc(ruc: str) -> Dict[str, Any]:
+    """
+    Función de compatibilidad con ConsultaPeru.
+
+    Uso:
+        from consultas.sunat_scraper import consultar_ruc
+        data = consultar_ruc("20123456789")
+    """
+    scraper = SunatScraper()
+    return scraper.consultar_ruc(ruc)
+
+
+# ─── Limpiar caché ─────────────────────────────────────────────────────────
+def limpiar_cache():
+    """Limpia la caché de consultas."""
+    _cache.clear()
+    logger.info("Caché de SUNAT limpiada")
