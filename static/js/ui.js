@@ -232,6 +232,7 @@ function rfEmpresa(d) {
     h += '</div></div><div class="ficha-actions">';
     h += '<button class="btn btn-outline btn-sm" onclick="abrirEtiquetaEmpresa(\x27' + es(e.ruc) + '\x27)">🏷 Etiquetar</button>';
     h += '<button class="btn btn-outline btn-sm" onclick="editarEmpresa(\x27' + es(e.ruc) + '\x27)">✏️ Editar</button>';
+    h += '<button class="btn btn-outline btn-sm" onclick="enriquecerEmpresa(\x27' + es(e.ruc) + '\x27)" title="Completar datos desde SUNAT">🔄 SUNAT</button>';
     h += '<button class="btn btn-ghost btn-sm btn-delete-empresa" data-ruc="' + es(e.ruc) + '">🗑 Eliminar</button>';
     h += '</div></div><div class="ficha-body">';
     if (e.notas) h += '<div class="ficha-notas">📝 ' + es(e.notas) + '</div>';
@@ -593,9 +594,10 @@ function cvEmpresas() {
     ct.innerHTML = '<p class="loading-text"><span class="spinner"></span> Cargando empresas...</p>';
     af(A + "/empresas/todas").then(function(emps) {
         if (emps.length === 0) { ct.innerHTML = '<p class="no-results">No hay empresas registradas.</p>'; return; }
-        var h = '<p style="margin-bottom:12px;color:var(--color-text-secondary);">' + emps.length + ' empresas</p><div style="overflow-x:auto;"><table class="db-table"><thead><tr><th>RUC</th><th>Nombre</th><th>Dirección</th><th></th><th></th></tr></thead><tbody>';
+        var h = '<p style="margin-bottom:12px;color:var(--color-text-secondary);display:flex;justify-content:space-between;align-items:center;"><span>' + emps.length + ' empresas</span><button class="btn btn-outline btn-sm" onclick="enriquecerTodasEmpresas()">🔄 Enriquecer todas desde SUNAT</button></p><div style="overflow-x:auto;"><table class="db-table"><thead><tr><th>RUC</th><th>Nombre</th><th>Estado</th><th></th><th></th></tr></thead><tbody>';
         emps.forEach(function(e) {
-            h += '<tr><td>' + es(e.ruc) + '</td><td><strong>' + es(e.nombre) + '</strong></td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (e.direccion ? es(e.direccion) : "\u2014") + '</td>';
+            var estadoHtml = e.estado ? '<span class="status-badge status-' + es(e.estado.toLowerCase()) + '">' + es(e.estado) + '</span>' : "\u2014";
+            h += '<tr><td>' + es(e.ruc) + '</td><td><strong>' + es(e.nombre) + '</strong></td><td>' + estadoHtml + '</td>';
             h += '<td><button class="btn btn-primary btn-xs btn-ver-empresa" data-ruc="' + es(e.ruc) + '">Ver</button></td>';
             h += '<td><button class="btn btn-danger btn-xs btn-del-empresa" data-ruc="' + es(e.ruc) + '" title="Eliminar">🗑</button></td></tr>';
         });
@@ -739,6 +741,29 @@ document.getElementById("btn-reset-confirm").addEventListener("click", async fun
     document.getElementById("reset-confirm-input").value = "";
     btn.style.opacity = "0.5";
 });
+
+/* ─── Enriquecer Empresa desde SUNAT ─── */
+async function enriquecerEmpresa(ruc) {
+    if (!confirm("Consultar SUNAT para completar datos de " + ruc + "?")) return;
+    try {
+        var r = await af(A + "/empresas/" + ruc + "/enriquecer", { method: "POST" });
+        st(r.mensaje, "success");
+        cfEmpresa(ruc);
+    } catch (err) { st(err.message, "error"); }
+}
+window.enriquecerEmpresa = enriquecerEmpresa;
+
+async function enriquecerTodasEmpresas() {
+    if (!confirm("Enriquecer TODAS las empresas desde SUNAT? Puede tomar varios minutos.")) return;
+    try {
+        var r = await af(A + "/empresas/enriquecer-todas", { method: "POST" });
+        st(r.mensaje, r.errores && r.errores.length > 0 ? "error" : "success");
+        if (r.errores && r.errores.length > 0) {
+            st(r.mensaje + " | Errores: " + r.errores.join("; "), "error");
+        }
+    } catch (err) { st(err.message, "error"); }
+}
+window.enriquecerTodasEmpresas = enriquecerTodasEmpresas;
 
 /* ─── Consulta DNI (RENIEC) ─── */
 async function consultarDni() {

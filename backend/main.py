@@ -410,6 +410,105 @@ def api_eliminar_empresa(ruc: str, db: Session = Depends(get_db), user: Usuario 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ENRIQUECER EMPRESA DESDE SUNAT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/empresas/{ruc}/enriquecer", response_model=dict)
+def api_enriquecer_empresa(ruc: str, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    """Enriquece una empresa consultando SUNAT y actualizando sus campos."""
+    empresa = obtener_empresa_por_ruc(db, ruc)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    from consultas.sunat_scraper import SunatScraper, SunatScraperError, CaptchaDetectedError
+
+    try:
+        scraper = SunatScraper()
+        data = scraper.consultar_ruc(ruc)
+    except CaptchaDetectedError:
+        # Fallback a apiperu.dev
+        try:
+            from consultas.reniec_sunat import ConsultaPeru
+            api = ConsultaPeru()
+            data = api.consultar_ruc(ruc)
+            data["representante_legal"] = None
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"SUNAT bloqueado y fallback no disponible: {e}")
+    except SunatScraperError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Mapeo de campos SUNAT -> modelo
+    if data.get("nombre_o_razon_social"):
+        empresa.nombre = data["nombre_o_razon_social"]
+    if data.get("direccion"):
+        empresa.direccion = data["direccion"]
+    empresa.estado = data.get("estado") or empresa.estado
+    empresa.condicion = data.get("condicion") or empresa.condicion
+    empresa.tipo_contribuyente = data.get("tipo_contribuyente") or empresa.tipo_contribuyente
+    empresa.nombre_comercial = data.get("nombre_comercial") or empresa.nombre_comercial
+    empresa.fecha_inscripcion = data.get("fecha_inscripcion") or empresa.fecha_inscripcion
+    empresa.fecha_inicio_actividades = data.get("fecha_inicio_actividades") or empresa.fecha_inicio_actividades
+    empresa.sistema_contabilidad = data.get("sistema_contabilidad") or empresa.sistema_contabilidad
+    empresa.actividad_comercio_exterior = data.get("actividad_comercio_exterior") or empresa.actividad_comercio_exterior
+    empresa.actividad_economica = data.get("actividad_economica") or empresa.actividad_economica
+    empresa.comprobantes_autorizados = data.get("comprobantes_autorizados") or empresa.comprobantes_autorizados
+    empresa.sistema_emision = data.get("sistema_emision") or empresa.sistema_emision
+    empresa.afiliado_ple = data.get("afiliado_ple") or empresa.afiliado_ple
+
+    if data.get("representante_legal"):
+        empresa.representante_legal_dni = data["representante_legal"].get("dni") or empresa.representante_legal_dni
+        empresa.representante_legal_nombre = data["representante_legal"].get("nombre") or empresa.representante_legal_nombre
+
+    db.commit()
+    db.refresh(empresa)
+    registrar_auditoria(db, user.id, user.username, "UPDATE", "Empresa", ruc, {"accion": "enriquecer_sunat"})
+
+    return {"mensaje": f"Empresa {ruc} enriquecida desde SUNAT", "campos_actualizados": len([v for v in data.values() if v])}
+
+
+@app.post("/api/empresas/enriquecer-todas", response_model=dict)
+def api_enriquecer_todas_empresas(db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    """Enriquece todas las empresas activas desde SUNAT (ejecucion secuencial)."""
+    from consultas.sunat_scraper import SunatScraper
+    empresas = listar_todas_empresas(db)
+    total = len(empresas)
+    actualizadas = 0
+    errores = []
+
+    scraper = SunatScraper()
+    for i, emp in enumerate(empresas):
+        try:
+            data = scraper.consultar_ruc(emp.ruc)
+            if data.get("nombre_o_razon_social"):
+                emp.nombre = data["nombre_o_razon_social"]
+            if data.get("direccion"):
+                emp.direccion = data["direccion"]
+            emp.estado = data.get("estado") or emp.estado
+            emp.condicion = data.get("condicion") or emp.condicion
+            emp.tipo_contribuyente = data.get("tipo_contribuyente") or emp.tipo_contribuyente
+            emp.nombre_comercial = data.get("nombre_comercial") or emp.nombre_comercial
+            emp.fecha_inscripcion = data.get("fecha_inscripcion") or emp.fecha_inscripcion
+            emp.fecha_inicio_actividades = data.get("fecha_inicio_actividades") or emp.fecha_inicio_actividades
+            if data.get("representante_legal"):
+                emp.representante_legal_dni = data["representante_legal"].get("dni") or emp.representante_legal_dni
+                emp.representante_legal_nombre = data["representante_legal"].get("nombre") or emp.representante_legal_nombre
+            db.flush()
+            actualizadas += 1
+        except Exception as e:
+            errores.append(f"{emp.ruc}: {str(e)[:60]}")
+
+    db.commit()
+    registrar_auditoria(db, user.id, user.username, "UPDATE", "Empresa", "TODAS", {"accion": "enriquecer_todas_sunat"})
+
+    return {
+        "mensaje": f"Enriquecidas {actualizadas}/{total} empresas",
+        "total": total,
+        "actualizadas": actualizadas,
+        "errores": errores[:10],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PERSONA ↔ EMPRESA (vinculos)
 # ═══════════════════════════════════════════════════════════════════════════════
 
