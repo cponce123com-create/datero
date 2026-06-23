@@ -294,22 +294,14 @@ window.cargarArbol = async function(dni) {
     c.classList.remove("hidden"); ct_.innerHTML = '<span class="spinner"></span> Cargando...';
     try {
         var d = await af(A + "/personas/" + dni + "/arbol?profundidad=3");
-        var t = "👤 " + d.raiz.nombre_completo + " (DNI: " + d.raiz.dni + ")
-";
-        if (d.ascendentes.length > 0) { t += "
-▲ ASCENDENTES:
-"; d.ascendentes.forEach(function(n) { t += fan(n, "", true); }); }
-        if (d.descendentes.length > 0) { t += "
-▼ DESCENDENTES:
-"; d.descendentes.forEach(function(n) { t += fan(n, "", false); }); }
-        ct_.textContent = t;
-    } catch (err) { ct_.textContent = "Error: " + err.message; }
+        var t = "👤 " + d.raiz.nombre_completo + " (DNI: " + d.raiz.dni + ")\n"
+        if (d.ascendentes.length > 0) { t += "\n▲ ASCENDENTES:\n"; d.ascendentes.forEach(function(n) { t += fan(n, "", true); }); }
+        if (d.descendentes.length > 0) { t += "\n▼ DESCENDENTES:\n"; d.descendentes.forEach(function(n) { t += fan(n, "", false); }); }
 };
 
 function fan(no, px, ia) {
     var r = no.tipo_relacion ? "[" + no.tipo_relacion + "] " : "";
-    var l = px + (px ? "├─ " : "") + r + no.persona.nombre_completo + "
-";
+        var l = px + (px ? "├─ " : "") + r + no.persona.nombre_completo + "\n";
     if (no.hijos && no.hijos.length > 0) { no.hijos.forEach(function(ch, i) { var il = i === no.hijos.length - 1; var np = px + (il ? "   " : "│  "); l += fan(ch, np, ia); }); }
     return l;
 }
@@ -580,10 +572,8 @@ document.getElementById("form-importar").addEventListener("submit", async functi
     ob.disabled = true; ob.textContent = "Importando...";
     try {
         var r = await af(A + "/db/importar", { method: "POST", body: JSON.stringify(ps) });
-        var m = r.mensaje + "
-Creados: " + r.creados;
-        if (r.errores && r.errores.length > 0) m += "
-Errores: " + r.errores.length;
+        var m = r.mensaje + "\nCreados: " + r.creados;
+          if (r.errores && r.errores.length > 0) m += "\nErrores: " + r.errores.length;
         st(m, r.errores && r.errores.length > 0 ? "error" : "success");
         cm("modal-importar"); document.getElementById("csv-textarea").value = "";
     } catch (err) { st(err.message, "error"); }
