@@ -466,20 +466,21 @@ def api_enriquecer_empresa(ruc: str, db: Session = Depends(get_db), user: Usuari
 
     from consultas.sunat_scraper import SunatScraper, SunatScraperError, CaptchaDetectedError
 
+    # SUNAT usa reCAPTCHA v3 que requests no puede resolver.
+    # Intentamos apiperu.dev primero (requiere CONSULTA_TOKEN).
+    # El scraper directo queda como respaldo por si SUNAT cambia.
+    from consultas.reniec_sunat import ConsultaPeru
     try:
-        scraper = SunatScraper()
-        data = scraper.consultar_ruc(ruc)
-    except CaptchaDetectedError:
-        # Fallback a apiperu.dev
+        api = ConsultaPeru()
+        data = api.consultar_ruc(ruc)
+        data["representante_legal"] = None
+    except Exception:
+        # Fallback: intentar scraper directo
         try:
-            from consultas.reniec_sunat import ConsultaPeru
-            api = ConsultaPeru()
-            data = api.consultar_ruc(ruc)
-            data["representante_legal"] = None
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"SUNAT bloqueado y fallback no disponible: {e}")
-    except SunatScraperError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+            scraper = SunatScraper()
+            data = scraper.consultar_ruc(ruc)
+        except (CaptchaDetectedError, SunatScraperError) as e2:
+            raise HTTPException(status_code=422, detail=str(e2))
 
     # Mapeo de campos SUNAT -> modelo
     if data.get("nombre_o_razon_social"):
@@ -541,7 +542,7 @@ def _ejecutar_enriquecimiento(user_id: int, user_username: str):
         _progreso_enriquecer["mensaje"] = "Iniciando..."
         _progreso_enriquecer["ruc_actual"] = ""
 
-        scraper = SunatScraper()
+        from consultas.reniec_sunat import ConsultaPeru
         for i, emp in enumerate(empresas):
             if not _progreso_enriquecer.get("activo", True):
                 _progreso_enriquecer["mensaje"] = "Cancelado por el usuario"
@@ -550,7 +551,15 @@ def _ejecutar_enriquecimiento(user_id: int, user_username: str):
 
             _progreso_enriquecer["ruc_actual"] = emp.ruc
             try:
-                data = scraper.consultar_ruc(emp.ruc)
+                # Intentar apiperu.dev primero (funciona, requiere token)
+                try:
+                    api = ConsultaPeru()
+                    data = api.consultar_ruc(emp.ruc)
+                    data["representante_legal"] = None
+                except Exception:
+                    # Fallback: scraper directo SUNAT
+                    scraper = SunatScraper()
+                    data = scraper.consultar_ruc(emp.ruc)
                 if data.get("nombre_o_razon_social"):
                     emp.nombre = data["nombre_o_razon_social"]
                 if data.get("direccion"):
