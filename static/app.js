@@ -76,21 +76,69 @@ document.addEventListener("keydown", function(e) { if (e.key === "Escape") docum
 /* Escape */
 function es(s) { if (!s) return ""; var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
-/* Search */
+/* Search - live */
 var si = document.getElementById("search-input");
 var sb = document.getElementById("search-btn");
 var sr = document.getElementById("search-results");
-sb.addEventListener("click", ds);
-si.addEventListener("keydown", function(e) { if (e.key === "Enter") ds(); });
+var searchTimer = null;
+sb.addEventListener("click", function() { ds(true); });
 
-async function ds() {
+// Live search: dispara al escribir (debounce 300ms, min 2 chars)
+si.addEventListener("input", function(e) {
+    var q = si.value.trim();
+    if (q.length < 2) { sr.classList.add("hidden"); return; }
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(function() { dsLive(q); }, 300);
+});
+
+// Enter key = go to person directly if only one match, else button behavior
+si.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+        if (searchTimer) clearTimeout(searchTimer);
+        ds(true);
+    }
+    if (e.key === "Escape") { sr.classList.add("hidden"); }
+});
+
+// Hide dropdown on click outside
+document.addEventListener("click", function(e) {
+    if (!e.target.closest("#search-input") && !e.target.closest("#search-results")) {
+        sr.classList.add("hidden");
+    }
+});
+
+async function dsLive(q) {
+    try {
+        var d = await af(A + "/personas?q=" + encodeURIComponent(q) + "&limite=8");
+        if (d.total === 0) { sr.innerHTML = '<div class="no-results">Sin resultados</div>'; sr.classList.remove("hidden"); return; }
+        sr.innerHTML = d.resultados.map(function(p) {
+            return '<div class="search-result-item" data-dni="' + p.dni + '"><span><strong>' + es(p.nombre_completo) + '</strong></span><span class="search-result-dni">DNI: ' + es(p.dni) + '</span></div>';
+        }).join("");
+        sr.querySelectorAll(".search-result-item").forEach(function(it) {
+            it.addEventListener("click", function() {
+                sr.classList.add("hidden");
+                si.value = d.resultados.find(function(x){return x.dni===it.dataset.dni}).nombre_completo;
+                cf(it.dataset.dni);
+            });
+        });
+        sr.classList.remove("hidden");
+    } catch (err) { /* silent for live search */ }
+}
+
+// ds(true) = full search (Enter or button click)
+async function ds(enter) {
     var q = si.value.trim(); if (!q) return;
     try {
         var d = await af(A + "/personas?q=" + encodeURIComponent(q));
         if (d.total === 0) { sr.innerHTML = '<div class="no-results">Sin resultados</div>'; sr.classList.remove("hidden"); return; }
-        if (d.total === 1) { sr.classList.add("hidden"); cf(d.resultados[0].dni); return; }
-        sr.innerHTML = d.resultados.map(function(p) { return '<div class="search-result-item" data-dni="' + p.dni + '"><span><strong>' + es(p.nombre_completo) + '</strong></span><span class="search-result-dni">DNI: ' + es(p.dni) + '</span></div>'; }).join("");
-        sr.querySelectorAll(".search-result-item").forEach(function(it) { it.addEventListener("click", function() { sr.classList.add("hidden"); si.value = ""; cf(it.dataset.dni); }); });
+        if (d.total === 1 && enter) { sr.classList.add("hidden"); cf(d.resultados[0].dni); return; }
+        // Show full results
+        sr.innerHTML = d.resultados.map(function(p) {
+            return '<div class="search-result-item" data-dni="' + p.dni + '"><span><strong>' + es(p.nombre_completo) + '</strong></span><span class="search-result-dni">DNI: ' + es(p.dni) + '</span></div>';
+        }).join("");
+        sr.querySelectorAll(".search-result-item").forEach(function(it) {
+            it.addEventListener("click", function() { sr.classList.add("hidden"); si.value = ""; cf(it.dataset.dni); });
+        });
         sr.classList.remove("hidden");
     } catch (err) { st(err.message, "error"); }
 }
