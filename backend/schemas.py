@@ -188,3 +188,39 @@ class BusquedaPersonaOut(BaseModel):
     """Resultado de búsqueda textual."""
     resultados: List[PersonaBrief]
     total: int
+
+
+# ─── Auth ─────────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    username: str
+    rol: str
+
+class UsuarioOut(BaseModel):
+    id: int
+    username: str
+    rol: str
+    activo: bool
+    creado_en: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+class AuditoriaOut(BaseModel):
+    id: int
+    usuario_id: Optional[int] = None
+    usuario_username: Optional[str] = None
+    accion: str
+    entidad: str
+    entidad_id: Optional[str] = None
+    detalle: Optional[dict] = None
+    timestamp: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+class AuditoriaLista(BaseModel):
+    resultados: List[AuditoriaOut]
+    total: int

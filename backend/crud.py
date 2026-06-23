@@ -5,17 +5,36 @@ Cada función recibe una sesión de SQLAlchemy (db) y los parámetros necesarios
 Todas las consultas usan parámetros enlazados para prevenir inyección SQL.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional, List
 
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from models import Persona, Relacion, Etiqueta, PersonaEtiqueta, PersonaTrabajo
+from models import Persona, Relacion, Etiqueta, PersonaEtiqueta, PersonaTrabajo, Auditoria
 from schemas import (
     PersonaCreate, PersonaUpdate,
     RelacionCreate, PersonaEtiquetaAssign,
 )
+
+
+def registrar_auditoria(
+    db: Session, usuario_id: Optional[int], usuario_username: Optional[str],
+    accion: str, entidad: str, entidad_id: Optional[str] = None,
+    detalle: Optional[dict] = None,
+):
+    """Registra un cambio en la tabla de auditoría."""
+    audit = Auditoria(
+        usuario_id=usuario_id,
+        usuario_username=usuario_username,
+        accion=accion,
+        entidad=entidad,
+        entidad_id=entidad_id,
+        detalle=detalle,
+    )
+    db.add(audit)
+    db.commit()
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

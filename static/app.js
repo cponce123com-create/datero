@@ -7,32 +7,49 @@
 
 var A = "/api";
 
-/* Auth */
-function ga() { return sessionStorage.getItem("rc_auth"); }
-function sa(u, p) { sessionStorage.setItem("rc_auth", btoa(u + ":" + p)); }
+/* ─── Auth JWT ──────────────────────────────────────────────────────────── */
+function getAuth() { return sessionStorage.getItem("rc_token"); }
+function setAuth(token, username, rol) {
+    sessionStorage.setItem("rc_token", token);
+    if (username) sessionStorage.setItem("rc_user", username);
+    if (rol) sessionStorage.setItem("rc_rol", rol);
+}
 function sl() { var e = document.getElementById("login-overlay"); if (e) e.classList.remove("hidden"); }
 function hl() { var e = document.getElementById("login-overlay"); if (e) e.classList.add("hidden"); }
+function logout() { sessionStorage.clear(); location.reload(); }
+function esAdmin() { return sessionStorage.getItem("rc_rol") === "admin"; }
 
 async function af(url, o) {
     o = o || {};
-    var a = ga();
-    if (!a) { sl(); throw new Error("Sin sesion"); }
-    var h = { Authorization: "Basic " + a, "Content-Type": "application/json" };
+    var token = getAuth();
+    if (!token) { sl(); throw new Error("Sin sesion"); }
+    var h = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
     if (o.headers) Object.assign(h, o.headers);
     var r = await fetch(url, { method: o.method, headers: h, body: o.body });
-    if (r.status === 401) { sessionStorage.removeItem("rc_auth"); sl(); throw new Error("Credenciales invalidas"); }
+    if (r.status === 401) { sessionStorage.clear(); sl(); throw new Error("Sesion expirada"); }
     if (!r.ok) { var d = await r.json().catch(function() { return {}; }); throw new Error(d.detail || "Error " + r.status); }
     if (r.status === 204) return null;
     return r.json();
 }
 
 /* Login */
-document.getElementById("form-login").addEventListener("submit", function(e) {
+document.getElementById("form-login").addEventListener("submit", async function(e) {
     e.preventDefault();
     var u = document.getElementById("login-user").value.trim();
     var p = document.getElementById("login-pass").value.trim();
     if (!u || !p) return;
-    sa(u, p); hl(); _init();
+    var btn = e.target.querySelector("button[type=submit]");
+    btn.disabled = true; btn.textContent = "Ingresando...";
+    try {
+        var r = await fetch(A + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: u, password: p }) });
+        if (!r.ok) { var ed = await r.json(); throw new Error(ed.detail || "Error"); }
+        var d = await r.json();
+        setAuth(d.access_token, d.username, d.rol);
+        hl();
+        if (d.rol === "lector") st("Modo lectura: solo puede ver datos", "info");
+        _init();
+    } catch (err) { st(err.message, "error"); }
+    btn.disabled = false; btn.textContent = "Ingresar";
 });
 
 /* Toast */
@@ -260,5 +277,5 @@ async function _init() {
 }
 
 /* Start */
-if (ga()) { hl(); _init(); } else { sl(); }
+if (getAuth()) { hl(); _init(); } else { sl(); }
 })();

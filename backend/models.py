@@ -1,16 +1,19 @@
 """
 models.py — Modelos SQLAlchemy para la base de datos de RedCorruptela.
 
-Define cuatro tablas principales:
+Define tablas principales:
   - personas: datos biográficos de cada individuo (DNI único).
-  - relaciones: vínculo dirigido entre dos personas (padre, madre, cónyuge, etc.).
-  - etiquetas: categorías para marcar a personas (ej. "contratado en municipalidad").
-  - persona_etiqueta: tabla pivote que asigna etiquetas a personas con observaciones.
+  - relaciones: vínculo dirigido entre dos personas.
+  - etiquetas: categorías para marcar a personas.
+  - persona_etiqueta: tabla pivote etiqueta-persona.
+  - persona_trabajo: lugares de trabajo.
+  - usuarios: cuentas de acceso (admin/lector).
+  - auditoria: registro de cambios.
 """
 
 from sqlalchemy import (
     Column, Integer, String, Date, Boolean, ForeignKey,
-    Text, DateTime, UniqueConstraint,
+    Text, DateTime, UniqueConstraint, JSON,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -193,3 +196,34 @@ class PersonaTrabajo(Base):
 
     def __repr__(self):
         return f"<PersonaTrabajo(persona_id={self.persona_id}, empresa='{self.empresa_nombre}')>"
+
+
+class Usuario(Base):
+    """Cuenta de acceso al sistema."""
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(80), unique=True, nullable=False, index=True)
+    password_hash = Column(String(200), nullable=False)
+    rol = Column(String(20), nullable=False, default="lector", comment="admin | lector")
+    activo = Column(Boolean, default=True)
+    creado_en = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"<Usuario(username='{self.username}', rol='{self.rol}')>"
+
+
+class Auditoria(Base):
+    """Registro de cambios en la base de datos."""
+    __tablename__ = "auditoria"
+
+    id = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    usuario_username = Column(String(80), nullable=True)
+    accion = Column(String(20), nullable=False, comment="CREATE | UPDATE | DELETE")
+    entidad = Column(String(50), nullable=False, comment="Persona | Relacion | Etiqueta")
+    entidad_id = Column(String(50), nullable=True, comment="DNI o ID de la entidad")
+    detalle = Column(JSON, nullable=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+    usuario = relationship("Usuario")
