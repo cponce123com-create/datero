@@ -138,10 +138,13 @@ class SunatScraper:
 
     def _obtener_num_rnd(self) -> str:
         """
-        Paso 1: Obtiene el parámetro numRnd desde la página inicial de SUNAT.
+        Paso 1: Obtiene la página inicial de SUNAT y extrae el token necesario.
 
-        GET https://e-consultaruc.sunat.gob.pe/
-        → Extrae numRnd del formulario oculto.
+        SUNAT cambió su portal. Ahora no usa numRnd, requiere session cookies
+        y un token del formulario.
+
+        Si no se puede obtener el token, lanza SunatScraperError para
+        que el endpoint haga fallback a apiperu.dev.
         """
         try:
             resp = self._session.get(
@@ -158,28 +161,31 @@ class SunatScraper:
         if self._es_captcha(html):
             raise CaptchaDetectedError("SUNAT requiere CAPTCHA")
 
-        # Buscar numRnd en el HTML
-        # Formato típico: <input type="hidden" name="numRnd" value="0.123456789" />
+        # Buscar numRnd (formato antiguo)
         match = re.search(
             r'''name=["']numRnd["'][^>]*value=["']([^"']+)["']''',
             html
         )
-        if not match:
-            # Intentar patrón alternativo: numRnd en JavaScript
-            match = re.search(
-                r'''numRnd\s*=\s*["']([^"']+)["']''',
-                html
-            )
+        if match:
+            num_rnd = match.group(1)
+            logger.debug(f"numRnd obtenido: {num_rnd[:20]}...")
+            return num_rnd
 
-        if not match:
-            raise SunatScraperError(
-                "No se pudo obtener numRnd. "
-                "SUNAT puede haber cambiado su página."
-            )
+        # Intentar obtener token (nuevo formato)
+        match = re.search(
+            r'''name=["']token["'][^>]*value=["']([^"']+)["']''',
+            html
+        )
+        if match:
+            logger.debug("Token obtenido (nuevo formato SUNAT)")
+            return match.group(1)
 
-        num_rnd = match.group(1)
-        logger.debug(f"numRnd obtenido: {num_rnd[:20]}...")
-        return num_rnd
+        # No se encontró ni numRnd ni token → SUNAT cambió su página
+        # Lanzar error para que el endpoint haga fallback
+        raise SunatScraperError(
+            "SUNAT cambió su portal. No se pudo obtener token de consulta. "
+            "Usando servicio alternativo..."
+        )
 
     def _enviar_consulta(self, ruc: str, num_rnd: str) -> str:
         """
