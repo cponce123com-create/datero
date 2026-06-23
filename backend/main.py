@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import re
 
 from database import get_db, init_db
 from models import Persona, Relacion, Usuario, Auditoria
@@ -419,8 +420,16 @@ def api_importar_inteligente(
     automaticamente la etiqueta a todas las personas creadas.
     """
     from models import PersonaTrabajo, PersonaEtiqueta as PE, Etiqueta as ET
-    import re
+    try:
+        return _batch_import(texto, db, user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+def _batch_import(texto, db, user):
+    from models import PersonaTrabajo, PersonaEtiqueta as PE, Etiqueta as ET
     raw = texto.get("texto", "")
     etiqueta_nombre = texto.get("etiqueta", "").strip()
 
