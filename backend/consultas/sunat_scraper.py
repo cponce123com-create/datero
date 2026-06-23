@@ -370,18 +370,25 @@ class SunatScraper:
         return data
 
     def _es_captcha(self, html: str) -> bool:
-        """Detecta si SUNAT devolvió un CAPTCHA."""
-        indicadores = [
-            "captcha",
-            "recaptcha",
-            "g-recaptcha",
+        """
+        Detecta si SUNAT BLOQUEÓ la consulta con CAPTCHA.
+
+        SUNAT carga reCAPTCHA v3 en todas las páginas (no es bloqueo).
+        Solo se considera CAPTCHA cuando hay un mensaje explícito de
+        bloqueo o challenge.
+        """
+        html_lower = html.lower()
+        indicadores_bloqueo = [
             "cf-challenge",
             "cloudflare",
             "Access denied",
-            "Please enable JavaScript",
+            "captcha de seguridad",
+            "resolver captcha",
+            "complete el captcha",
         ]
-        html_lower = html.lower()
-        return any(ind in html_lower for ind in indicadores)
+        # Solo detectar si hay indicadores de BLOQUEO real
+        # (no solo carga de script reCAPTCHA)
+        return any(ind in html_lower for ind in indicadores_bloqueo)
 
 
 # ─── Función helper para compatibilidad ────────────────────────────────────

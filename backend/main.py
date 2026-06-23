@@ -859,15 +859,41 @@ def api_consultar_dni(dni: str = Query(..., min_length=8, max_length=8), user: U
 
 @app.get("/api/consultar/ruc")
 def api_consultar_ruc(ruc: str = Query(..., min_length=11, max_length=11), user: Usuario = Depends(get_current_user)):
-    """Consulta datos de una empresa por RUC usando scraper directo de SUNAT."""
+    """
+    Consulta datos de una empresa por RUC.
+
+    Estrategia:
+    1. Intenta SunatScraper (scraping directo de SUNAT, gratuito).
+    2. Si SUNAT devuelve CAPTCHA, fallback a apiperu.dev (requiere token).
+    3. Si apiperu tampoco funciona, devuelve error controlado.
+    """
+    from consultas.sunat_scraper import SunatScraper, SunatScraperError, CaptchaDetectedError
+
+    # ── Intento 1: SunatScraper ──
     try:
-        from consultas.sunat_scraper import SunatScraper, SunatScraperError
         scraper = SunatScraper()
         return scraper.consultar_ruc(ruc)
+    except CaptchaDetectedError:
+        # SUNAT pide CAPTCHA → fallback
+        pass
     except SunatScraperError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Error al consultar SUNAT: {e}")
+        # Error de scraping (timeout, no encontrado, etc.)
+        # Intentar fallback antes de fallar
+        pass
+
+    # ── Intento 2: Fallback a apiperu.dev ──
+    try:
+        from consultas.reniec_sunat import ConsultaPeru
+        api = ConsultaPeru()
+        data = api.consultar_ruc(ruc)
+        # Normalizar campos para mantener compatibilidad
+        data["representante_legal"] = None
+        return data
+    except Exception as e2:
+        raise HTTPException(
+            status_code=502,
+            detail=f"SUNAT bloqueo la consulta (CAPTCHA) y el servicio alternativo tampoco esta disponible: {e2}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
