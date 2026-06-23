@@ -689,43 +689,48 @@ def api_importar_inteligente(
                         db.flush()
 
                     # Create relationship based on TIPO
-                    rel_origen = None
+                    origen_id = None
+                    destino_id = None
                     rel_tipo = None
 
                     if ftipo == 'MADRE':
-                        rel_origen = fm.id
+                        origen_id = fm.id
+                        destino_id = persona.id
                         rel_tipo = 'madre'
                     elif ftipo == 'PADRE':
-                        rel_origen = fm.id
+                        origen_id = fm.id
+                        destino_id = persona.id
                         rel_tipo = 'padre'
                     elif ftipo == 'HIJA' or ftipo == 'HIJO':
-                        rel_origen = persona.id
+                        origen_id = persona.id
+                        destino_id = fm.id
                         rel_tipo = 'padre'
                     elif ftipo == 'HERMANA' or ftipo == 'HERMANO':
-                        rel_origen = persona.id
+                        origen_id = persona.id
+                        destino_id = fm.id
                         rel_tipo = 'hermano'
                     elif ftipo == 'HIJASTRA' or ftipo == 'HIJASTRO':
-                        rel_origen = persona.id
+                        origen_id = persona.id
+                        destino_id = fm.id
                         rel_tipo = 'padre'
                     elif ftipo == 'CONYUGE' or ftipo == 'ESPOSO' or ftipo == 'ESPOSA':
-                        rel_origen = persona.id
+                        origen_id = persona.id
+                        destino_id = fm.id
                         rel_tipo = 'conyuge'
                     elif ftipo == 'COMPARTEN HIJOS':
-                        rel_origen = persona.id
+                        origen_id = persona.id
+                        destino_id = fm.id
                         rel_tipo = 'conyuge'
 
-                    if rel_origen and rel_tipo:
+                    if origen_id and rel_tipo:
                         from models import Relacion as REL
                         r_existente = db.query(REL).filter(
-                            REL.persona_origen_id == rel_origen,
-                            REL.persona_destino_id == persona.id if rel_origen == fm.id else persona.id,
+                            REL.persona_origen_id == origen_id,
+                            REL.persona_destino_id == destino_id,
                             REL.tipo_relacion == rel_tipo
                         ).first()
                         if not r_existente:
-                            if rel_origen == fm.id:
-                                r = REL(persona_origen_id=fm.id, persona_destino_id=persona.id, tipo_relacion=rel_tipo, certeza='documento')
-                            else:
-                                r = REL(persona_origen_id=persona.id, persona_destino_id=fm.id, tipo_relacion=rel_tipo, certeza='documento')
+                            r = REL(persona_origen_id=origen_id, persona_destino_id=destino_id, tipo_relacion=rel_tipo, certeza='documento')
                             db.add(r)
                             familiares_creados += 1
 
