@@ -17,7 +17,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt as _bcrypt
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -28,9 +28,6 @@ SECRET_KEY = os.getenv("JWT_SECRET", "redcorruptela_super_secret_key_change_in_p
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 horas
 
-# ─── Password hashing ──────────────────────────────────────────────────────
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 # ─── Security schemes ──────────────────────────────────────────────────────
 security_basic = HTTPBasic(auto_error=False)
 security_bearer = HTTPBearer(auto_error=False)
@@ -38,12 +35,21 @@ security_bearer = HTTPBearer(auto_error=False)
 
 def hash_password(password: str) -> str:
     """Genera hash bcrypt de una contraseña."""
-    return pwd_context.hash(password)
+    if isinstance(password, str):
+        password = password.encode("utf-8")
+    return _bcrypt.hashpw(password, _bcrypt.gensalt()).decode("utf-8")
 
 
 def verificar_password(plain: str, hashed: str) -> bool:
     """Verifica contraseña contra su hash bcrypt."""
-    return pwd_context.verify(plain, hashed)
+    if isinstance(plain, str):
+        plain = plain.encode("utf-8")
+    if isinstance(hashed, str):
+        hashed = hashed.encode("utf-8")
+    try:
+        return _bcrypt.checkpw(plain, hashed)
+    except Exception:
+        return False
 
 
 def crear_token(username: str, usuario_id: int, rol: str) -> str:
@@ -87,8 +93,12 @@ def seed_usuario_admin(db: Session):
 
         existente = db.query(Usuario).filter(Usuario.username == username).first()
         if existente:
-            # Actualizar hash por si cambió la clave
-            existente.password_hash = hash_password(password)
+            # Si la contraseña cambió o el hash es inválido, re-hashear
+            try:
+                if not verificar_password(password, existente.password_hash):
+                    existente.password_hash = hash_password(password)
+            except Exception:
+                existente.password_hash = hash_password(password)
             existente.rol = "admin"
         else:
             u = Usuario(
