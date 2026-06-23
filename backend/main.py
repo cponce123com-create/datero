@@ -858,7 +858,6 @@ def api_consultar_dni(dni: str = Query(..., min_length=8, max_length=8), user: U
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/consultar/ruc")
-@app.get("/api/consultar-ruc/{ruc}")
 def api_consultar_ruc(ruc: str = Query(..., min_length=11, max_length=11), user: Usuario = Depends(get_current_user)):
     """Consulta datos de una empresa por RUC usando scraper directo de SUNAT."""
     try:
