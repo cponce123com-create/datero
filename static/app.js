@@ -94,7 +94,7 @@ function rf(d) {
     var h = "";
     h += '<div class="ficha-header"><div><div class="ficha-nombre">' + es(p.nombre_completo) + '</div><div class="ficha-dni">DNI: ' + es(p.dni) + '</div><div class="ficha-meta"><span>📅 Nacimiento: ' + fn + '</span>';
     if (p.foto_url) h += '<span>🖼 <a href="' + es(p.foto_url) + '" target="_blank">Ver foto</a></span>';
-    h += '</div></div><div class="ficha-actions"><button class="btn btn-outline btn-sm" onclick="cargarArbol(\x27' + es(p.dni) + '\x27)">🌳 Árbol</button> <button class="btn btn-outline btn-sm" onclick="abrirEtiqueta(\x27' + es(p.dni) + '\x27)">🏷 Etiquetar</button> <button class="btn btn-ghost btn-sm btn-delete-persona" data-dni="' + es(p.dni) + '">🗑 Eliminar</button></div></div><div class="ficha-body">';
+    h += '</div></div><div class="ficha-actions"><button class="btn btn-outline btn-sm" onclick="cargarArbol(\x27' + es(p.dni) + '\x27)">🌳 Árbol</button> <button class="btn btn-outline btn-sm" onclick="abrirEtiqueta(\x27' + es(p.dni) + '\x27)">🏷 Etiquetar</button> <button class="btn btn-outline btn-sm" onclick="editarPersona(\x27' + es(p.dni) + '\x27)">✏️ Editar</button> <button class="btn btn-ghost btn-sm btn-delete-persona" data-dni="' + es(p.dni) + '">🗑 Eliminar</button></div></div><div class="ficha-body">';
     if (p.notas) h += '<div class="ficha-notas">📝 ' + es(p.notas) + '</div>';
     h += '<div class="section"><div class="section-title">👥 Familiares Directos <span class="section-badge">' + d.relaciones_directas.length + '</span></div>';
     if (d.relaciones_directas.length === 0) { h += '<p style="color:var(--color-text-secondary);font-size:0.9rem;">Sin relaciones.</p>'; }
@@ -149,13 +149,33 @@ function fan(no, px, ia) {
 function abrirEtiqueta(dni) { document.getElementById("e-dni").value = dni; document.getElementById("e-nombre").value = ""; document.getElementById("e-obs").value = ""; om("modal-etiqueta"); }
 window.abrirEtiqueta = abrirEtiqueta;
 
+window.editarPersona = function(dni) {
+    document.getElementById("modal-persona-title").textContent = "Editar Persona";
+    var btn = document.querySelector("#form-persona button[type=submit]");
+    btn.textContent = "Guardar Cambios";
+    document.getElementById("p-dni").disabled = true;
+    window.editandoDni = null;
+    af(A + "/personas/" + dni).then(function(d) {
+        var p = d.persona;
+        window.editandoDni = dni;
+        document.getElementById("p-dni").value = p.dni;
+        document.getElementById("p-nombres").value = p.nombres || "";
+        document.getElementById("p-ap-paterno").value = p.apellido_paterno || "";
+        document.getElementById("p-ap-materno").value = p.apellido_materno || "";
+        document.getElementById("p-fecha-nac").value = p.fecha_nacimiento || "";
+        document.getElementById("p-foto").value = p.foto_url || "";
+        document.getElementById("p-notas").value = p.notas || "";
+        om("modal-persona");
+    }).catch(function(err) { st(err.message, "error"); });
+};
+
 /* Forms */
-document.getElementById("form-persona").addEventListener("submit", async function(e) { e.preventDefault(); var b = { dni: document.getElementById("p-dni").value.trim(), nombres: document.getElementById("p-nombres").value.trim(), apellido_paterno: document.getElementById("p-ap-paterno").value.trim(), apellido_materno: document.getElementById("p-ap-materno").value.trim() || null, fecha_nacimiento: document.getElementById("p-fecha-nac").value || null, foto_url: document.getElementById("p-foto").value.trim() || null, notas: document.getElementById("p-notas").value.trim() || null }; try { await af(A + "/personas", { method: "POST", body: JSON.stringify(b) }); st("Persona creada", "success"); cm("modal-persona"); document.getElementById("form-persona").reset(); cf(b.dni); } catch (err) { st(err.message, "error"); } });
+document.getElementById("form-persona").addEventListener("submit", async function(e) { e.preventDefault(); var b = { nombres: document.getElementById("p-nombres").value.trim(), apellido_paterno: document.getElementById("p-ap-paterno").value.trim(), apellido_materno: document.getElementById("p-ap-materno").value.trim() || null, fecha_nacimiento: document.getElementById("p-fecha-nac").value || null, foto_url: document.getElementById("p-foto").value.trim() || null, notas: document.getElementById("p-notas").value.trim() || null }; if (editandoDni) { b.dni = document.getElementById("p-dni").value.trim(); try { await af(A + "/personas/" + editandoDni, { method: "PUT", body: JSON.stringify(b) }); st("Persona actualizada", "success"); cm("modal-persona"); document.getElementById("form-persona").reset(); editandoDni = null; document.getElementById("modal-persona-title").textContent = "Nueva Persona"; document.querySelector("#form-persona button[type=submit]").textContent = "Guardar Persona"; document.getElementById("p-dni").disabled = false; cf(b.dni); } catch (err) { st(err.message, "error"); } } else { b.dni = document.getElementById("p-dni").value.trim(); try { await af(A + "/personas", { method: "POST", body: JSON.stringify(b) }); st("Persona creada", "success"); cm("modal-persona"); document.getElementById("form-persona").reset(); cf(b.dni); } catch (err) { st(err.message, "error"); } } });
 document.getElementById("form-relacion").addEventListener("submit", async function(e) { e.preventDefault(); var b = { persona_origen_dni: document.getElementById("r-origen").value.trim(), persona_destino_dni: document.getElementById("r-destino").value.trim(), tipo_relacion: document.getElementById("r-tipo").value, certeza: document.getElementById("r-certeza").value, notas: document.getElementById("r-notas").value.trim() || null }; try { var r_ = await af(A + "/relaciones", { method: "POST", body: JSON.stringify(b) }); st(r_.mensaje || "Relacion creada", "success"); cm("modal-relacion"); document.getElementById("form-relacion").reset(); var fd = document.getElementById("persona-ficha"); if (!fd.classList.contains("hidden")) { var dn = fd.querySelector(".ficha-dni"); if (dn) cf(dn.textContent.replace("DNI: ", "")); } } catch (err) { st(err.message, "error"); } });
 document.getElementById("form-etiqueta").addEventListener("submit", async function(e) { e.preventDefault(); var dni = document.getElementById("e-dni").value; var b = { etiqueta_nombre: document.getElementById("e-nombre").value.trim(), observacion: document.getElementById("e-obs").value.trim() || null }; try { await af(A + "/personas/" + dni + "/etiquetas", { method: "POST", body: JSON.stringify(b) }); st("Etiqueta asignada", "success"); cm("modal-etiqueta"); document.getElementById("form-etiqueta").reset(); cf(dni); } catch (err) { st(err.message, "error"); } });
 
 /* Header */
-document.getElementById("btn-nueva-persona").addEventListener("click", function() { document.getElementById("form-persona").reset(); om("modal-persona"); });
+document.getElementById("btn-nueva-persona").addEventListener("click", function() { document.getElementById("form-persona").reset(); editandoDni = null; document.getElementById("p-dni").disabled = false; document.getElementById("modal-persona-title").textContent = "Nueva Persona"; document.querySelector("#form-persona button[type=submit]").textContent = "Guardar Persona"; om("modal-persona"); });
 document.getElementById("btn-nueva-relacion").addEventListener("click", function() { document.getElementById("form-relacion").reset(); om("modal-relacion"); });
 document.getElementById("btn-etiquetas").addEventListener("click", async function() { om("modal-lista-etiquetas"); var ct = document.getElementById("lista-etiquetas-content"); ct.innerHTML = '<p class="loading-text"><span class="spinner"></span> Cargando...</p>'; try { var ets = await af(A + "/etiquetas"); if (ets.length === 0) { ct.innerHTML = '<p class="no-results">No hay etiquetas.</p>'; return; } ct.innerHTML = ets.map(function(et) { return '<div class="etiqueta-list-item" data-nombre="' + es(et.nombre) + '"><span>🏷 <strong>' + es(et.nombre) + '</strong></span><span style="color:var(--color-text-secondary);font-size:0.82rem;">Click →</span></div>'; }).join(""); ct.querySelectorAll(".etiqueta-list-item").forEach(function(it) { it.addEventListener("click", async function() { var n = it.dataset.nombre; try { var pl = await af(A + "/etiquetas/" + encodeURIComponent(n) + "/personas"); if (pl.length === 0) { st('Ninguna persona con "' + n + '"', "info"); return; } cm("modal-lista-etiquetas"); if (pl.length === 1) { cf(pl[0].dni); return; } sr.innerHTML = pl.map(function(p) { return '<div class="search-result-item" data-dni="' + p.dni + '"><span><strong>' + es(p.nombre_completo) + '</strong></span><span class="search-result-dni">DNI: ' + es(p.dni) + '</span></div>'; }).join(""); sr.querySelectorAll(".search-result-item").forEach(function(el) { el.addEventListener("click", function() { sr.classList.add("hidden"); cf(el.dataset.dni); }); }); sr.classList.remove("hidden"); } catch (err) { st(err.message, "error"); } }); }); } catch (err) { ct.innerHTML = '<p class="no-results">Error: ' + es(err.message) + '</p>'; } });
 
@@ -168,10 +188,17 @@ function cv() {
     ct.innerHTML = '<p class="loading-text"><span class="spinner"></span> Cargando BD...</p>';
     af(A + "/db/todas").then(function(ps) {
         if (ps.length === 0) { ct.innerHTML = '<p class="no-results">BD vacía.</p>'; return; }
-        var h = '<p style="margin-bottom:12px;color:var(--color-text-secondary);">' + ps.length + ' personas</p><div style="overflow-x:auto;"><table class="db-table"><thead><tr><th>DNI</th><th>Nombre</th><th>Nacimiento</th><th>Notas</th><th></th></tr></thead><tbody>';
-        ps.forEach(function(p) { var fn = p.fecha_nacimiento ? new Date(p.fecha_nacimiento + "T00:00:00").toLocaleDateString("es-PE") : "—"; h += '<tr><td>' + es(p.dni) + '</td><td><strong>' + es(p.nombre_completo) + '</strong></td><td>' + fn + '</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (p.notas ? es(p.notas) : "—") + '</td><td><button class="btn btn-primary btn-xs" data-dni="' + es(p.dni) + '">Ver ficha</button></td></tr>'; });
-        h += '</tbody></table></div>'; ct.innerHTML = h;
-        ct.querySelectorAll(".btn-xs").forEach(function(btn) { btn.addEventListener("click", function() { cm("modal-visorbd"); cf(btn.dataset.dni); }); });
+        var h = '<p style="margin-bottom:12px;color:var(--color-text-secondary);">' + ps.length + ' personas</p><div style="overflow-x:auto;"><table class="db-table"><thead><tr><th>DNI</th><th>Nombre</th><th>Nacimiento</th><th>Notas</th><th></th><th></th></tr></thead><tbody>';
+        ps.forEach(function(p) {
+            var fn = p.fecha_nacimiento ? new Date(p.fecha_nacimiento + "T00:00:00").toLocaleDateString("es-PE") : "—";
+            h += '<tr><td>' + es(p.dni) + '</td><td><strong>' + es(p.nombre_completo) + '</strong></td><td>' + fn + '</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (p.notas ? es(p.notas) : "—") + '</td>';
+            h += '<td><button class="btn btn-primary btn-xs btn-ver-bd" data-dni="' + es(p.dni) + '">Ver</button></td>';
+            h += '<td><button class="btn btn-danger btn-xs btn-del-bd" data-dni="' + es(p.dni) + '" title="Eliminar">🗑</button></td></tr>';
+        });
+        h += '</tbody></table></div>';
+        ct.innerHTML = h;
+        ct.querySelectorAll(".btn-ver-bd").forEach(function(btn) { btn.addEventListener("click", function() { cm("modal-visorbd"); cf(btn.dataset.dni); }); });
+        ct.querySelectorAll(".btn-del-bd").forEach(function(btn) { btn.addEventListener("click", async function() { if (!confirm("Eliminar a " + btn.dataset.dni + "?")) return; try { await af(A + "/personas/" + btn.dataset.dni, { method: "DELETE" }); st("Persona eliminada", "success"); cv(); } catch (err) { st(err.message, "error"); } }); });
     }).catch(function(err) { ct.innerHTML = '<p class="no-results">Error: ' + es(err.message) + '</p>'; });
 }
 
