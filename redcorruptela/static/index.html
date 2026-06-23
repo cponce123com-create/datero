@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedCorruptela — Detección de Redes de Corrupción</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <!-- ═══ CABECERA ═══ -->
+    <header class="header">
+        <div class="header-inner">
+            <h1 class="logo">
+                <span class="logo-icon">🔍</span>
+                Red<span class="logo-highlight">Corruptela</span>
+            </h1>
+            <nav class="header-actions">
+                <button id="btn-nueva-persona" class="btn btn-primary btn-sm">+ Persona</button>
+                <button id="btn-nueva-relacion" class="btn btn-outline btn-sm">+ Relación</button>
+                <button id="btn-etiquetas" class="btn btn-outline btn-sm">🏷 Etiquetas</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- ═══ BARRA DE BÚSQUEDA ═══ -->
+    <section class="search-section">
+        <div class="search-container">
+            <input
+                type="text"
+                id="search-input"
+                class="search-input"
+                placeholder="Buscar por DNI, nombre o apellido..."
+                autocomplete="off"
+            >
+            <button id="search-btn" class="btn btn-primary search-btn">Buscar</button>
+        </div>
+        <div id="search-results" class="search-results hidden"></div>
+    </section>
+
+    <!-- ═══ CONTENIDO PRINCIPAL ═══ -->
+    <main id="main-content" class="main-content">
+        <!-- Estado inicial: sin búsqueda -->
+        <div id="empty-state" class="empty-state">
+            <div class="empty-icon">📋</div>
+            <h2>Base de datos de inteligencia</h2>
+            <p>Busque una persona por DNI o nombre para ver su ficha completa,<br>
+            relaciones familiares y parentescos inferidos automáticamente.</p>
+            <div class="empty-hints">
+                <div class="hint-card">
+                    <strong>🔗 Parentescos automáticos</strong>
+                    <p>El sistema deduce abuelos, tíos, cuñados, suegros y más a partir de las relaciones registradas.</p>
+                </div>
+                <div class="hint-card">
+                    <strong>🏷 Sistema de etiquetas</strong>
+                    <p>Marque personas con etiquetas como "contratado 2024" o "proveedor municipalidad" para armar expedientes.</p>
+                </div>
+                <div class="hint-card">
+                    <strong>🌳 Árbol genealógico</strong>
+                    <p>Visualice la estructura familiar de cualquier persona hasta 4 generaciones.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ficha de persona (se llena dinámicamente) -->
+        <div id="persona-ficha" class="persona-ficha hidden"></div>
+    </main>
+
+    <!-- ═══ MODAL: NUEVA PERSONA ═══ -->
+    <div id="modal-persona" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-persona-title">Nueva Persona</h2>
+                <button class="modal-close" data-close="modal-persona">&times;</button>
+            </div>
+            <form id="form-persona" class="modal-form">
+                <div class="form-group">
+                    <label for="p-dni">DNI <span class="required">*</span></label>
+                    <input type="text" id="p-dni" required maxlength="20" placeholder="12345678">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p-nombres">Nombres <span class="required">*</span></label>
+                        <input type="text" id="p-nombres" required placeholder="Juan Carlos">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p-ap-paterno">Apellido Paterno <span class="required">*</span></label>
+                        <input type="text" id="p-ap-paterno" required placeholder="Olano">
+                    </div>
+                    <div class="form-group">
+                        <label for="p-ap-materno">Apellido Materno</label>
+                        <input type="text" id="p-ap-materno" placeholder="Romero">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="p-fecha-nac">Fecha de Nacimiento</label>
+                        <input type="date" id="p-fecha-nac">
+                    </div>
+                    <div class="form-group">
+                        <label for="p-foto">URL de Foto</label>
+                        <input type="url" id="p-foto" placeholder="https://...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="p-notas">Notas</label>
+                    <textarea id="p-notas" rows="3" placeholder="Información relevante para la investigación..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-persona">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Persona</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: NUEVA RELACIÓN ═══ -->
+    <div id="modal-relacion" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Nueva Relación</h2>
+                <button class="modal-close" data-close="modal-relacion">&times;</button>
+            </div>
+            <form id="form-relacion" class="modal-form">
+                <div class="form-group">
+                    <label for="r-origen">DNI de la Persona Origen <span class="required">*</span></label>
+                    <input type="text" id="r-origen" required placeholder="DNI de quien ejerce la relación">
+                </div>
+                <div class="form-group">
+                    <label for="r-tipo">Tipo de Relación <span class="required">*</span></label>
+                    <select id="r-tipo" required>
+                        <option value="">Seleccione...</option>
+                        <option value="padre">Padre → Hijo/a</option>
+                        <option value="madre">Madre → Hijo/a</option>
+                        <option value="conyuge">Cónyuge</option>
+                        <option value="hermano">Hermano</option>
+                        <option value="hermana">Hermana</option>
+                    </select>
+                    <small>La relación es dirigida: "A es padre de B". "Hijo/a" se infiere automáticamente.</small>
+                </div>
+                <div class="form-group">
+                    <label for="r-destino">DNI de la Persona Destino <span class="required">*</span></label>
+                    <input type="text" id="r-destino" required placeholder="DNI de quien recibe la relación">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="r-certeza">Certeza</label>
+                        <select id="r-certeza">
+                            <option value="confirmado">Confirmado</option>
+                            <option value="rumor">Rumor</option>
+                            <option value="documento">Documento</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="r-notas">Notas</label>
+                    <textarea id="r-notas" rows="2" placeholder="Fuente de la información..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-relacion">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Crear Relación</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: ASIGNAR ETIQUETA ═══ -->
+    <div id="modal-etiqueta" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Asignar Etiqueta</h2>
+                <button class="modal-close" data-close="modal-etiqueta">&times;</button>
+            </div>
+            <form id="form-etiqueta" class="modal-form">
+                <input type="hidden" id="e-dni">
+                <div class="form-group">
+                    <label for="e-nombre">Nombre de la Etiqueta <span class="required">*</span></label>
+                    <input type="text" id="e-nombre" required placeholder="Ej: contratado 2024, proveedor municipalidad">
+                    <small>Si la etiqueta no existe, se creará automáticamente.</small>
+                </div>
+                <div class="form-group">
+                    <label for="e-obs">Observación</label>
+                    <textarea id="e-obs" rows="3" placeholder="Detalle de la asignación (ej: contrato N° 123 del 15/03/2024)..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-etiqueta">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Asignar Etiqueta</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: LISTA DE ETIQUETAS ═══ -->
+    <div id="modal-lista-etiquetas" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Todas las Etiquetas</h2>
+                <button class="modal-close" data-close="modal-lista-etiquetas">&times;</button>
+            </div>
+            <div id="lista-etiquetas-content" class="modal-body">
+                <p class="loading-text">Cargando...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ TOAST (notificaciones) ═══ -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+shell.nix
+__pycache__/
+*.pyc
+shell.nix
