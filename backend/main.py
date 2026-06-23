@@ -9,7 +9,8 @@ import os
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query, status, Body, Request, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Query, status, Body, Request, BackgroundTasks, Form
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -101,6 +102,36 @@ async def root():
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTH
 # ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/auth/login-form")
+def api_login_form(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Login via form POST (fallback sin JS). Redirige al home con cookie."""
+    usuario = db.query(Usuario).filter(
+        Usuario.username == username, Usuario.activo == True
+    ).first()
+    if not usuario or not verificar_password(password, usuario.password_hash):
+        # Redirigir al home con error
+        return HTMLResponse(
+            content='<html><body><script>alert("Usuario o contraseña incorrectos");window.location.href="/";</script></body></html>',
+            status_code=401,
+        )
+    token = crear_token(usuario.username, usuario.id, usuario.rol)
+    # Redirigir al home pasando el token como fragmento (#) para sessionStorage
+    return HTMLResponse(
+        content=f'<html><body><script>'
+                f'sessionStorage.setItem("rc_token","{token}");'
+                f'sessionStorage.setItem("rc_user","{usuario.username}");'
+                f'sessionStorage.setItem("rc_rol","{usuario.rol}");'
+                f'window.location.href="/";'
+                f'</script></body></html>',
+        status_code=200,
+    )
+
 
 @app.post("/api/auth/login", response_model=TokenResponse)
 @limiter.limit("10/minute")
