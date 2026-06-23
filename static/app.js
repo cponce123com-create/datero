@@ -381,22 +381,17 @@ async function cargarArbol(dni) {
     try {
         const data = await apiFetch(`${API_BASE}/personas/${dni}/arbol?profundidad=3`);
 
-        let tree = `👤 ${data.raiz.nombre_completo} (DNI: ${data.raiz.dni})
-`;
+        let tree = '👤 ' + data.raiz.nombre_completo + ' (DNI: ' + data.raiz.dni + ')\n';
 
         if (data.ascendentes.length > 0) {
-            tree += '
-▲ ASCENDENTES:
-';
+            tree += '\n▲ ASCENDENTES:\n';
             data.ascendentes.forEach(n => {
                 tree += formatArbolNodo(n, '', true);
             });
         }
 
         if (data.descendentes.length > 0) {
-            tree += '
-▼ DESCENDENTES:
-';
+            tree += '\n▼ DESCENDENTES:\n';
             data.descendentes.forEach(n => {
                 tree += formatArbolNodo(n, '', false);
             });
@@ -410,8 +405,7 @@ async function cargarArbol(dni) {
 
 function formatArbolNodo(nodo, prefix, isAsc) {
     const rel = nodo.tipo_relacion ? `[${nodo.tipo_relacion}] ` : '';
-    let line = prefix + (prefix ? '├─ ' : '') + rel + nodo.persona.nombre_completo + '
-';
+    let line = prefix + (prefix ? '├─ ' : '') + rel + nodo.persona.nombre_completo + '\n';
 
     if (nodo.hijos && nodo.hijos.length > 0) {
         nodo.hijos.forEach((child, i) => {
