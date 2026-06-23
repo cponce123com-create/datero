@@ -4,9 +4,11 @@ models.py — Modelos SQLAlchemy para la base de datos de RedCorruptela.
 Define tablas principales:
   - personas: datos biográficos de cada individuo (DNI único).
   - relaciones: vínculo dirigido entre dos personas.
-  - etiquetas: categorías para marcar a personas.
+  - etiquetas: categorías para marcar a personas o empresas.
   - persona_etiqueta: tabla pivote etiqueta-persona.
-  - persona_trabajo: lugares de trabajo.
+  - empresas: personas jurídicas (RUC único).
+  - persona_empresa: vínculo persona ↔ empresa con cargo.
+  - empresa_etiqueta: tabla pivote etiqueta-empresa.
   - usuarios: cuentas de acceso (admin/lector).
   - auditoria: registro de cambios.
 """
@@ -63,9 +65,9 @@ class Persona(Base):
         back_populates="persona",
         lazy="selectin",
     )
-    # Lugares de trabajo
-    trabajos = relationship(
-        "PersonaTrabajo",
+    # Empresas vinculadas (reemplaza a PersonaTrabajo)
+    empresas = relationship(
+        "PersonaEmpresa",
         back_populates="persona",
         lazy="selectin",
     )
@@ -145,7 +147,7 @@ class Relacion(Base):
 
 class Etiqueta(Base):
     """
-    Categoría o marcador que se puede asignar a personas.
+    Categoría o marcador que se puede asignar a personas o empresas.
     Ejemplos: "contratado 2024", "proveedor municipalidad",
               "familiar de alcalde", "investigación abierta".
     """
@@ -186,20 +188,117 @@ class PersonaEtiqueta(Base):
         return f"<PersonaEtiqueta(persona={self.persona_id}, etiqueta={self.etiqueta_id})>"
 
 
-class PersonaTrabajo(Base):
-    """Lugar de trabajo de una persona (solo nombre de empresa, sin sueldo/periodo)."""
-    __tablename__ = "persona_trabajo"
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMPRESAS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class Empresa(Base):
+    """
+    Persona jurídica identificada por su RUC.
+    """
+    __tablename__ = "empresas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ruc = Column(String(11), unique=True, nullable=False, index=True,
+                 comment="Registro Único del Contribuyente, 11 dígitos")
+    nombre = Column(String(300), nullable=False,
+                    comment="Razón social o nombre comercial")
+    direccion = Column(Text, nullable=True)
+    notas = Column(Text, nullable=True)
+    activo = Column(Boolean, default=True, comment="False = baja lógica")
+    creado_en = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Personas vinculadas a esta empresa
+    personas_relacionadas = relationship(
+        "PersonaEmpresa",
+        back_populates="empresa",
+        lazy="selectin",
+    )
+    # Etiquetas asignadas a la empresa
+    etiquetas_asignadas = relationship(
+        "EmpresaEtiqueta",
+        back_populates="empresa",
+        lazy="selectin",
+    )
+
+    def __repr__(self):
+        return f"<Empresa(ruc='{self.ruc}', nombre='{self.nombre}')>"
+
+
+class PersonaEmpresa(Base):
+    """
+    Vínculo entre una persona y una empresa con un cargo específico.
+    Reemplaza a PersonaTrabajo (empresa_nombre texto -> entidad Empresa).
+
+    Ejemplos de cargo:
+      - 'trabajador' / 'empleado'
+      - 'representante legal'
+      - 'gerente general'
+      - 'socio' / 'accionista'
+    """
+    __tablename__ = "persona_empresa"
 
     id = Column(Integer, primary_key=True, index=True)
     persona_id = Column(
         Integer, ForeignKey("personas.id", ondelete="CASCADE"), nullable=False
     )
-    empresa_nombre = Column(String(300), nullable=False)
+    empresa_id = Column(
+        Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    cargo = Column(String(200), nullable=True,
+                   comment="Rol de la persona en la empresa: trabajador, representante legal, etc.")
+    fecha_desde = Column(Date, nullable=True)
+    fecha_hasta = Column(Date, nullable=True)
+    observacion = Column(Text, nullable=True)
 
-    persona = relationship("Persona", back_populates="trabajos")
+    persona = relationship("Persona", back_populates="empresas")
+    empresa = relationship("Empresa", back_populates="personas_relacionadas")
+
+    # Una persona puede tener varios cargos en la misma empresa
+    __table_args__ = (
+        UniqueConstraint(
+            "persona_id", "empresa_id", "cargo",
+            name="uq_persona_empresa_cargo",
+        ),
+    )
 
     def __repr__(self):
-        return f"<PersonaTrabajo(persona_id={self.persona_id}, empresa='{self.empresa_nombre}')>"
+        return (
+            f"<PersonaEmpresa(persona_id={self.persona_id}, "
+            f"empresa_id={self.empresa_id}, cargo='{self.cargo}')>"
+        )
+
+
+class EmpresaEtiqueta(Base):
+    """
+    Tabla pivote: asigna una etiqueta a una empresa.
+    """
+    __tablename__ = "empresa_etiqueta"
+
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(
+        Integer, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False
+    )
+    etiqueta_id = Column(
+        Integer, ForeignKey("etiquetas.id", ondelete="CASCADE"), nullable=False
+    )
+    observacion = Column(Text, nullable=True)
+    fecha_asignacion = Column(DateTime(timezone=True), server_default=func.now())
+
+    empresa = relationship("Empresa", back_populates="etiquetas_asignadas")
+    etiqueta = relationship("Etiqueta", lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "etiqueta_id", name="uq_empresa_etiqueta"),
+    )
+
+    def __repr__(self):
+        return f"<EmpresaEtiqueta(empresa={self.empresa_id}, etiqueta={self.etiqueta_id})>"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# (Eliminado) PersonaTrabajo — reemplazado por Empresa + PersonaEmpresa
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
 class Usuario(Base):
@@ -225,7 +324,7 @@ class Auditoria(Base):
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     usuario_username = Column(String(80), nullable=True)
     accion = Column(String(20), nullable=False, comment="CREATE | UPDATE | DELETE")
-    entidad = Column(String(50), nullable=False, comment="Persona | Relacion | Etiqueta")
+    entidad = Column(String(50), nullable=False, comment="Persona | Relacion | Etiqueta | Empresa | PersonaEmpresa")
     entidad_id = Column(String(50), nullable=True, comment="DNI o ID de la entidad")
     detalle = Column(JSON, nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())

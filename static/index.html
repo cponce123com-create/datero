@@ -38,10 +38,13 @@
             <nav class="header-actions">
                 <button id="btn-nueva-persona" class="btn btn-primary btn-sm">+ Persona</button>
                 <button id="btn-nueva-relacion" class="btn btn-outline btn-sm">+ Relación</button>
+                <button id="btn-nueva-empresa" class="btn btn-outline btn-sm">🏢 + Empresa</button>
                 <button id="btn-etiquetas" class="btn btn-outline btn-sm">🏷 Etiquetas</button>
                 <button id="btn-visorbd" class="btn btn-outline btn-sm">📊 BD</button>
+                <button id="btn-visorempresas" class="btn btn-outline btn-sm">🏢 Empresas</button>
                 <button id="btn-importar" class="btn btn-outline btn-sm">📥 Importar</button>
                 <button id="btn-importar-inteligente" class="btn btn-primary btn-sm">🧠 Importar</button>
+                <button id="btn-reset" class="btn btn-danger btn-sm" style="background:#dc2626;color:#fff;border:none;">🗑 Reset</button>
                 <button id="btn-dashboard" class="btn btn-primary btn-sm">📊 Dashboard</button>
             </nav>
         </div>
@@ -50,21 +53,24 @@
     <!-- ═══ BARRA DE BÚSQUEDA ═══ -->
     <section class="search-section">
         <div class="search-container">
-            <input
-                type="text"
-                id="search-input"
-                class="search-input"
-                placeholder="Buscar por DNI, nombre o apellido..."
-                autocomplete="off"
-            >
+            <input type="text" id="search-input" class="search-input" placeholder="Buscar persona por DNI, nombre o apellido..." autocomplete="off">
             <button id="search-btn" class="btn btn-primary search-btn">Buscar</button>
         </div>
         <div id="search-results" class="search-results hidden"></div>
     </section>
 
+    <!-- ═══ BARRA DE BÚSQUEDA DE EMPRESAS ═══ -->
+    <section class="search-section" style="padding-top:0;">
+        <div class="search-container" style="gap:6px;">
+            <input type="text" id="search-empresa-input" class="search-input" placeholder="Buscar empresa por RUC o nombre..." autocomplete="off" style="padding:10px 14px;font-size:0.9rem;">
+            <button id="search-empresa-btn" class="btn btn-outline" style="padding:10px 20px;">Buscar Empresa</button>
+        </div>
+        <div id="search-empresa-results" class="search-results hidden"></div>
+    </section>
+
     <!-- ═══ CONTENIDO PRINCIPAL ═══ -->
     <main id="main-content" class="main-content">
-        <!-- Estado inicial: sin búsqueda -->
+        <!-- Estado inicial -->
         <div id="empty-state" class="empty-state">
             <div class="empty-icon">📋</div>
             <h2>Base de datos de inteligencia</h2>
@@ -77,17 +83,20 @@
                 </div>
                 <div class="hint-card">
                     <strong>🏷 Sistema de etiquetas</strong>
-                    <p>Marque personas con etiquetas como "contratado 2024" o "proveedor municipalidad" para armar expedientes.</p>
+                    <p>Marque personas y empresas con etiquetas como "contratado 2024" o "proveedor municipalidad".</p>
                 </div>
                 <div class="hint-card">
-                    <strong>🌳 Árbol genealógico</strong>
-                    <p>Visualice la estructura familiar de cualquier persona hasta 4 generaciones.</p>
+                    <strong>🏢 Empresas y representantes</strong>
+                    <p>Registre empresas con RUC, vincule personas con cargo y marque representantes legales.</p>
                 </div>
             </div>
         </div>
 
-        <!-- Ficha de persona (se llena dinámicamente) -->
+        <!-- Ficha de persona -->
         <div id="persona-ficha" class="persona-ficha hidden"></div>
+
+        <!-- Ficha de empresa -->
+        <div id="empresa-ficha" class="persona-ficha hidden"></div>
     </main>
 
     <!-- ═══ MODAL: NUEVA PERSONA ═══ -->
@@ -136,6 +145,39 @@
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" data-close="modal-persona">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Guardar Persona</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: NUEVA EMPRESA ═══ -->
+    <div id="modal-empresa" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-empresa-title">Nueva Empresa</h2>
+                <button class="modal-close" data-close="modal-empresa">&times;</button>
+            </div>
+            <form id="form-empresa" class="modal-form">
+                <div class="form-group">
+                    <label for="e-ruc">RUC <span class="required">*</span></label>
+                    <input type="text" id="e-ruc" required maxlength="11" pattern="[0-9]{11}" placeholder="20123456789">
+                </div>
+                <div class="form-group">
+                    <label for="e-nombre">Razón Social <span class="required">*</span></label>
+                    <input type="text" id="e-nombre" required placeholder="MINERIA PERU S.A.C.">
+                </div>
+                <div class="form-group">
+                    <label for="e-direccion">Dirección</label>
+                    <input type="text" id="e-direccion" placeholder="Av. Principal 123, Lima">
+                </div>
+                <div class="form-group">
+                    <label for="e-notas">Notas</label>
+                    <textarea id="e-notas" rows="3" placeholder="Información relevante sobre la empresa..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-empresa">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Empresa</button>
                 </div>
             </form>
         </div>
@@ -192,7 +234,62 @@
         </div>
     </div>
 
-    <!-- ═══ MODAL: ASIGNAR ETIQUETA ═══ -->
+    <!-- ═══ MODAL: VINCULAR PERSONA ↔ EMPRESA ═══ -->
+    <div id="modal-vincular-empresa" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Vincular Persona → Empresa</h2>
+                <button class="modal-close" data-close="modal-vincular-empresa">&times;</button>
+            </div>
+            <form id="form-vincular-empresa" class="modal-form">
+                <div class="form-group">
+                    <label for="ve-dni">DNI de la Persona <span class="required">*</span></label>
+                    <input type="text" id="ve-dni" required placeholder="12345678">
+                </div>
+                <div class="form-group">
+                    <label for="ve-ruc">RUC de la Empresa <span class="required">*</span></label>
+                    <input type="text" id="ve-ruc" required maxlength="11" placeholder="20123456789">
+                    <small>Si la empresa no existe, se creará automáticamente con ese RUC.</small>
+                </div>
+                <div class="form-group">
+                    <label for="ve-cargo">Cargo <span class="required">*</span></label>
+                    <select id="ve-cargo" required>
+                        <option value="trabajador">Trabajador</option>
+                        <option value="representante legal">Representante Legal</option>
+                        <option value="gerente general">Gerente General</option>
+                        <option value="socio">Socio</option>
+                        <option value="accionista">Accionista</option>
+                        <option value="otro">Otro</option>
+                    </select>
+                </div>
+                <div class="form-group" id="ve-cargo-otro-group" style="display:none;">
+                    <label for="ve-cargo-otro">Especifique el cargo</label>
+                    <input type="text" id="ve-cargo-otro" placeholder="Ej: director financiero">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="ve-fecha-desde">Desde</label>
+                        <input type="date" id="ve-fecha-desde">
+                    </div>
+                    <div class="form-group">
+                        <label for="ve-fecha-hasta">Hasta</label>
+                        <input type="date" id="ve-fecha-hasta">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="ve-obs">Observación</label>
+                    <textarea id="ve-obs" rows="2" placeholder="Detalles del vínculo..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-vincular-empresa">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Vincular</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: ASIGNAR ETIQUETA A PERSONA ═══ -->
     <div id="modal-etiqueta" class="modal hidden">
         <div class="modal-overlay"></div>
         <div class="modal-content">
@@ -219,10 +316,37 @@
         </div>
     </div>
 
+    <!-- ═══ MODAL: ASIGNAR ETIQUETA A EMPRESA ═══ -->
+    <div id="modal-etiqueta-empresa" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Asignar Etiqueta a Empresa</h2>
+                <button class="modal-close" data-close="modal-etiqueta-empresa">&times;</button>
+            </div>
+            <form id="form-etiqueta-empresa" class="modal-form">
+                <input type="hidden" id="ee-ruc">
+                <div class="form-group">
+                    <label for="ee-nombre">Nombre de la Etiqueta <span class="required">*</span></label>
+                    <input type="text" id="ee-nombre" required placeholder="Ej: PROVEEDOR 2019-2022">
+                    <small>Si la etiqueta no existe, se creará automáticamente.</small>
+                </div>
+                <div class="form-group">
+                    <label for="ee-obs">Observación</label>
+                    <textarea id="ee-obs" rows="3" placeholder="Detalle de la asignación..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-etiqueta-empresa">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Asignar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- ═══ MODAL: LISTA DE ETIQUETAS ═══ -->
     <div id="modal-lista-etiquetas" class="modal hidden">
         <div class="modal-overlay"></div>
-        <div class="modal-content">
+        <div class="modal-content" style="max-width:650px;">
             <div class="modal-header">
                 <h2>Todas las Etiquetas</h2>
                 <button class="modal-close" data-close="modal-lista-etiquetas">&times;</button>
@@ -233,15 +357,29 @@
         </div>
     </div>
 
-    <!-- ═══ MODAL: VISOR BD ═══ -->
+    <!-- ═══ MODAL: VISOR BD (personas) ═══ -->
     <div id="modal-visorbd" class="modal hidden">
         <div class="modal-overlay"></div>
         <div class="modal-content" style="max-width: 960px;">
             <div class="modal-header">
-                <h2>📊 Visor de Base de Datos</h2>
+                <h2>📊 Visor de Personas</h2>
                 <button class="modal-close" data-close="modal-visorbd">&times;</button>
             </div>
             <div id="visorbd-content" class="modal-body">
+                <p class="loading-text">Cargando...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: VISOR EMPRESAS ═══ -->
+    <div id="modal-visorempresas" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 960px;">
+            <div class="modal-header">
+                <h2>🏢 Visor de Empresas</h2>
+                <button class="modal-close" data-close="modal-visorempresas">&times;</button>
+            </div>
+            <div id="visorempresas-content" class="modal-body">
                 <p class="loading-text">Cargando...</p>
             </div>
         </div>
@@ -272,18 +410,18 @@
         </div>
     </div>
 
-    <!-- ═══ MODAL: SMART IMPORT (LEDER DATA) ═══ -->
+    <!-- ═══ MODAL: SMART IMPORT ═══ -->
     <div id="modal-importar-inteligente" class="modal hidden">
         <div class="modal-overlay"></div>
         <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header">
                 <h2>🧠 Importar desde LEDER DATA / Batch RUC 10</h2>
                 <button class="modal-close" data-close="modal-importar-inteligente">&times;</button>
-                </div>
-                <form id="form-importar-inteligente" class="modal-form">
+            </div>
+            <form id="form-importar-inteligente" class="modal-form">
                 <p class="import-info">Soporta dos modos:<br><b>1. LEDER DATA:</b> pegue el reporte individual.<br><b>2. Batch RUC 10:</b> pegue listado tabulado (RUC + nombre) y opcionalmente una etiqueta para todos.</p>
                 <div class="form-group">
-                    <label for="si-etiqueta">🏷 Etiqueta (opcional — se asigna a todas las personas)</label>
+                    <label for="si-etiqueta">🏷 Etiqueta (opcional)</label>
                     <input type="text" id="si-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR 2019-2022" style="font-size:0.9rem;padding:8px;">
                 </div>
                 <div class="form-group">
@@ -296,6 +434,33 @@
                     <button type="submit" class="btn btn-primary">Importar Inteligentemente</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: RESET DB ═══ -->
+    <div id="modal-reset" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>⚠️ Resetear Base de Datos</h2>
+                <button class="modal-close" data-close="modal-reset">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color:var(--color-danger);font-weight:600;margin-bottom:12px;">Esta acción eliminará TODOS los datos del sistema:</p>
+                <ul style="margin-bottom:16px;padding-left:20px;line-height:1.8;">
+                    <li>👤 Todas las <strong>personas</strong></li>
+                    <li>🏢 Todas las <strong>empresas</strong></li>
+                    <li>🔗 Todas las <strong>relaciones</strong> y vínculos</li>
+                    <li>🏷 Todas las <strong>etiquetas</strong></li>
+                    <li>📝 Todos los registros de <strong>auditoría</strong></li>
+                </ul>
+                <p style="margin-bottom:16px;">Para confirmar, escriba <strong style="color:var(--color-danger);">RESET</strong> en el campo inferior y presione el botón rojo.</p>
+                <input type="text" id="reset-confirm-input" class="search-input" placeholder="Escriba RESET para confirmar..." style="width:100%;padding:12px;font-size:1rem;text-align:center;border:2px solid var(--color-border);border-radius:var(--radius);">
+                <div class="modal-actions" style="margin-top:16px;">
+                    <button type="button" class="btn btn-ghost" data-close="modal-reset">Cancelar</button>
+                    <button id="btn-reset-confirm" class="btn btn-danger" disabled style="background:#dc2626;color:#fff;border:none;padding:10px 24px;border-radius:var(--radius);font-weight:600;opacity:0.5;">🗑 Resetear Todo</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -313,7 +478,7 @@
         </div>
     </div>
 
-    <!-- ═══ TOAST (notificaciones) ═══ -->
+    <!-- ═══ TOAST ═══ -->
     <div id="toast" class="toast hidden"></div>
 
     <script src="/static/app.js"></script>

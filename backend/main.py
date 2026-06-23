@@ -19,7 +19,7 @@ from slowapi.errors import RateLimitExceeded
 import re
 
 from database import get_db, init_db
-from models import Persona, Relacion, Usuario, Auditoria
+from models import Persona, Relacion, Usuario, Auditoria, Empresa, PersonaEmpresa
 from auth import (
     get_current_user, requiere_rol, crear_token,
     verificar_password, seed_usuario_admin, hash_password,
@@ -30,7 +30,12 @@ from crud import (
     crear_relacion, obtener_relaciones_directas, eliminar_relacion,
     crear_o_obtener_etiqueta, listar_etiquetas,
     asignar_etiqueta, desasignar_etiqueta, personas_por_etiqueta,
-    registrar_trabajo, registrar_auditoria,
+    registrar_auditoria,
+    crear_empresa, obtener_empresa_por_ruc, buscar_empresas,
+    listar_todas_empresas, actualizar_empresa, eliminar_empresa,
+    vincular_persona_empresa, desvincular_persona_empresa,
+    asignar_etiqueta_empresa, desasignar_etiqueta_empresa,
+    empresas_por_etiqueta, personas_por_empresa, empresas_por_persona,
 )
 from parentesco import (
     inferir_todos_parentescos,
@@ -43,20 +48,22 @@ from schemas import (
     PersonaEtiquetaAssign, PersonaEtiquetaOut,
     ParentescoOut, ParentescoLista,
     FichaPersonaOut, BusquedaPersonaOut,
-    ArbolOut, ArbolNodo, TrabajoOut,
+    ArbolOut, ArbolNodo,
     LoginRequest, TokenResponse, UsuarioOut,
     AuditoriaOut, AuditoriaLista, SmartImportOut,
+    EmpresaCreate, EmpresaUpdate, EmpresaOut, EmpresaBrief,
+    PersonaEmpresaCreate, PersonaEmpresaOut,
+    PersonaEmpresaPersonaOut, PersonaEmpresaEmpresaOut,
+    EmpresaEtiquetaAssign, EmpresaEtiquetaOut,
+    FichaEmpresaOut, BusquedaEmpresaOut,
+    TagStats, EmpresaStats, StatsOut,
 )
 
-# ─── Rate Limiter ─────────────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address)
 
 
-# ─── Inicialización ───────────────────────────────────────────────────────────
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Crea las tablas y seed de usuarios al iniciar."""
     init_db()
     db = next(get_db())
     try:
@@ -68,20 +75,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RedCorruptela API",
-    description="API para la detección de redes de corrupción mediante análisis de parentescos",
-    version="0.2.0",
+    description="API para la deteccion de redes de corrupcion mediante analisis de parentescos",
+    version="0.3.0",
     lifespan=lifespan,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Servir archivos estáticos
 app.mount("/static", StaticFiles(directory="../static"), name="static")
 
 
 @app.get("/")
 async def root():
-    """Redirige al frontend principal."""
     return FileResponse("../static/index.html")
 
 
@@ -92,37 +97,26 @@ async def root():
 @app.post("/api/auth/login", response_model=TokenResponse)
 @limiter.limit("10/minute")
 def api_login(request: Request, datos: LoginRequest, db: Session = Depends(get_db)):
-    """Inicio de sesión. Retorna JWT token."""
     usuario = db.query(Usuario).filter(
         Usuario.username == datos.username, Usuario.activo == True
     ).first()
     if not usuario or not verificar_password(datos.password, usuario.password_hash):
-        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
-
+        raise HTTPException(status_code=401, detail="Usuario o contrasena incorrectos")
     token = crear_token(usuario.username, usuario.id, usuario.rol)
-    return TokenResponse(
-        access_token=token,
-        username=usuario.username,
-        rol=usuario.rol,
-    )
+    return TokenResponse(access_token=token, username=usuario.username, rol=usuario.rol)
 
 
 @app.get("/api/auth/me", response_model=UsuarioOut)
 def api_auth_me(user: Usuario = Depends(get_current_user)):
-    """Retorna datos del usuario autenticado."""
     return user
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS: PERSONAS
+# PERSONAS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/personas", response_model=PersonaOut, status_code=status.HTTP_201_CREATED)
-def api_crear_persona(
-    datos: PersonaCreate,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
+def api_crear_persona(datos: PersonaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     try:
         persona = crear_persona(db, datos)
         registrar_auditoria(db, user.id, user.username, "CREATE", "Persona", persona.dni, datos.model_dump())
@@ -132,25 +126,13 @@ def api_crear_persona(
 
 
 @app.get("/api/personas", response_model=BusquedaPersonaOut)
-def api_buscar_personas(
-    q: str = Query(..., min_length=1),
-    limite: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
-):
+def api_buscar_personas(q: str = Query(..., min_length=1), limite: int = Query(20, ge=1, le=100), db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
     resultados = buscar_personas(db, q, limite)
-    return BusquedaPersonaOut(
-        resultados=[PersonaBrief.model_validate(p) for p in resultados],
-        total=len(resultados),
-    )
+    return BusquedaPersonaOut(resultados=[PersonaBrief.model_validate(p) for p in resultados], total=len(resultados))
 
 
 @app.get("/api/personas/{dni}", response_model=FichaPersonaOut)
-def api_obtener_persona(
-    dni: str,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
-):
+def api_obtener_persona(dni: str, db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
     persona = obtener_persona_por_dni(db, dni)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -161,10 +143,8 @@ def api_obtener_persona(
         persona_rel = db.query(Persona).filter(Persona.id == r["persona_relacionada_id"]).first()
         if persona_rel:
             relaciones_out.append(RelacionOut(
-                id=r["relacion_id"],
-                tipo_relacion=r["tipo_relacion"],
-                certeza=r["certeza"],
-                notas=r["notas"],
+                id=r["relacion_id"], tipo_relacion=r["tipo_relacion"],
+                certeza=r["certeza"], notas=r["notas"],
                 persona_relacionada=PersonaBrief.model_validate(persona_rel),
             ))
 
@@ -178,24 +158,31 @@ def api_obtener_persona(
         ))
 
     etiquetas_out = [PersonaEtiquetaOut.model_validate(pe) for pe in persona.etiquetas_asignadas]
-    trabajos_out = [TrabajoOut.model_validate(t) for t in persona.trabajos]
+
+    # Empresas vinculadas (nuevo modelo PersonaEmpresa)
+    empresas_out = []
+    for pe in persona.empresas:
+        if pe.empresa and pe.empresa.activo:
+            empresas_out.append(PersonaEmpresaPersonaOut(
+                id=pe.id,
+                empresa=EmpresaBrief.model_validate(pe.empresa),
+                cargo=pe.cargo,
+                fecha_desde=pe.fecha_desde,
+                fecha_hasta=pe.fecha_hasta,
+                observacion=pe.observacion,
+            ))
 
     return FichaPersonaOut(
         persona=PersonaOut.model_validate(persona),
         relaciones_directas=relaciones_out,
         parentescos_inferidos=parentescos_out,
         etiquetas=etiquetas_out,
-        trabajos=trabajos_out,
+        empresas=empresas_out,
     )
 
 
 @app.put("/api/personas/{dni}", response_model=PersonaOut)
-def api_actualizar_persona(
-    dni: str,
-    datos: PersonaUpdate,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
+def api_actualizar_persona(dni: str, datos: PersonaUpdate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     persona = actualizar_persona(db, dni, datos)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -204,11 +191,7 @@ def api_actualizar_persona(
 
 
 @app.delete("/api/personas/{dni}", status_code=status.HTTP_204_NO_CONTENT)
-def api_eliminar_persona(
-    dni: str,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
+def api_eliminar_persona(dni: str, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     eliminado = eliminar_persona(db, dni)
     if not eliminado:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -220,31 +203,17 @@ def api_eliminar_persona(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/relaciones", status_code=status.HTTP_201_CREATED)
-def api_crear_relacion(
-    datos: RelacionCreate,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
+def api_crear_relacion(datos: RelacionCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     try:
         relacion = crear_relacion(db, datos)
         registrar_auditoria(db, user.id, user.username, "CREATE", "Relacion", str(relacion.id), datos.model_dump())
-        return {
-            "mensaje": "Relación creada exitosamente",
-            "id": relacion.id,
-            "origen": relacion.origen.nombre_completo,
-            "tipo": relacion.tipo_relacion,
-            "destino": relacion.destino.nombre_completo,
-        }
+        return {"mensaje": "Relacion creada exitosamente", "id": relacion.id, "origen": relacion.origen.nombre_completo, "tipo": relacion.tipo_relacion, "destino": relacion.destino.nombre_completo}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
 @app.get("/api/relaciones/{dni}", response_model=List[RelacionOut])
-def api_relaciones_por_dni(
-    dni: str,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
-):
+def api_relaciones_por_dni(dni: str, db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
     persona = obtener_persona_por_dni(db, dni)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -253,24 +222,14 @@ def api_relaciones_por_dni(
     for r in relaciones_raw:
         persona_rel = db.query(Persona).filter(Persona.id == r["persona_relacionada_id"]).first()
         if persona_rel:
-            relaciones_out.append(RelacionOut(
-                id=r["relacion_id"],
-                tipo_relacion=r["tipo_relacion"],
-                certeza=r["certeza"],
-                notas=r["notas"],
-                persona_relacionada=PersonaBrief.model_validate(persona_rel),
-            ))
+            relaciones_out.append(RelacionOut(id=r["relacion_id"], tipo_relacion=r["tipo_relacion"], certeza=r["certeza"], notas=r["notas"], persona_relacionada=PersonaBrief.model_validate(persona_rel)))
     return relaciones_out
 
 
 @app.delete("/api/relaciones/{relacion_id}", status_code=status.HTTP_204_NO_CONTENT)
-def api_eliminar_relacion(
-    relacion_id: int,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
+def api_eliminar_relacion(relacion_id: int, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     if not eliminar_relacion(db, relacion_id):
-        raise HTTPException(status_code=404, detail="Relación no encontrada")
+        raise HTTPException(status_code=404, detail="Relacion no encontrada")
     registrar_auditoria(db, user.id, user.username, "DELETE", "Relacion", str(relacion_id))
 
 
@@ -279,12 +238,7 @@ def api_eliminar_relacion(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/parentesco", response_model=ParentescoLista)
-def api_inferir_parentesco(
-    dni: str = Query(...),
-    tipo: str = Query(..., description="abuelo, tio, cunado, suegro, etc."),
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(get_current_user),
-):
+def api_inferir_parentesco(dni: str = Query(...), tipo: str = Query(...), db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
     persona = obtener_persona_por_dni(db, dni)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona no encontrada")
@@ -294,10 +248,10 @@ def api_inferir_parentesco(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ÁRBOL GENEALÓGICO
+# ARBOL GENEALOGICO
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _construir_arbol_ascendente(db: Session, persona: Persona, profundidad: int) -> List[ArbolNodo]:
+def _construir_arbol_ascendente(db: Session, persona: Persona, profundidad: int) -> List:
     if profundidad <= 0: return []
     nodos = []
     padres = db.query(Persona).join(Relacion, Persona.id == Relacion.persona_origen_id).filter(Relacion.persona_destino_id == persona.id, Relacion.tipo_relacion.in_(["padre", "madre"]), Persona.activo == True).all()
@@ -307,7 +261,7 @@ def _construir_arbol_ascendente(db: Session, persona: Persona, profundidad: int)
         nodos.append(ArbolNodo(persona=PersonaBrief.model_validate(p), tipo_relacion=tipo, hijos=_construir_arbol_ascendente(db, p, profundidad - 1)))
     return nodos
 
-def _construir_arbol_descendente(db: Session, persona: Persona, profundidad: int) -> List[ArbolNodo]:
+def _construir_arbol_descendente(db: Session, persona: Persona, profundidad: int) -> List:
     if profundidad <= 0: return []
     nodos = []
     hijos = db.query(Persona).join(Relacion, Persona.id == Relacion.persona_destino_id).filter(Relacion.persona_origen_id == persona.id, Relacion.tipo_relacion.in_(["padre", "madre"]), Persona.activo == True).all()
@@ -325,7 +279,7 @@ def api_arbol_genealogico(dni: str, profundidad: int = Query(2, ge=1, le=4), db:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ETIQUETAS
+# ETIQUETAS (compartidas)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/etiquetas", response_model=EtiquetaOut, status_code=status.HTTP_201_CREATED)
@@ -346,6 +300,11 @@ def api_personas_por_etiqueta(nombre: str, db: Session = Depends(get_db), user: 
     personas = personas_por_etiqueta(db, nombre)
     return [PersonaBrief.model_validate(p) for p in personas]
 
+@app.get("/api/etiquetas/{nombre}/empresas", response_model=List[EmpresaBrief])
+def api_empresas_por_etiqueta(nombre: str, db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
+    empresas = empresas_por_etiqueta(db, nombre)
+    return [EmpresaBrief.model_validate(e) for e in empresas]
+
 @app.post("/api/personas/{dni}/etiquetas", status_code=status.HTTP_201_CREATED)
 def api_asignar_etiqueta(dni: str, datos: PersonaEtiquetaAssign, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     persona = obtener_persona_por_dni(db, dni)
@@ -365,10 +324,8 @@ def api_desasignar_etiqueta(dni: str, etiqueta_nombre: str, db: Session = Depend
         raise HTTPException(status_code=404, detail="Etiqueta no encontrada en esta persona")
     registrar_auditoria(db, user.id, user.username, "DELETE", "PersonaEtiqueta", f"{dni}/{etiqueta_nombre}")
 
-
 @app.put("/api/etiquetas/{etiqueta_id}", response_model=EtiquetaOut)
 def api_editar_etiqueta(etiqueta_id: int, datos: EtiquetaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
-    """Renombrar una etiqueta."""
     from models import Etiqueta as ET
     et = db.query(ET).filter(ET.id == etiqueta_id).first()
     if not et: raise HTTPException(status_code=404, detail="Etiqueta no encontrada")
@@ -377,6 +334,125 @@ def api_editar_etiqueta(etiqueta_id: int, datos: EtiquetaCreate, db: Session = D
     db.commit()
     registrar_auditoria(db, user.id, user.username, "UPDATE", "Etiqueta", f"{old_name} -> {datos.nombre}")
     return et
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMPRESAS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/empresas", response_model=EmpresaOut, status_code=status.HTTP_201_CREATED)
+def api_crear_empresa(datos: EmpresaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    try:
+        empresa = crear_empresa(db, datos)
+        registrar_auditoria(db, user.id, user.username, "CREATE", "Empresa", empresa.ruc, datos.model_dump())
+        return empresa
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@app.get("/api/empresas", response_model=BusquedaEmpresaOut)
+def api_buscar_empresas(q: str = Query(..., min_length=1), limite: int = Query(20, ge=1, le=100), db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
+    resultados = buscar_empresas(db, q, limite)
+    return BusquedaEmpresaOut(resultados=[EmpresaBrief.model_validate(e) for e in resultados], total=len(resultados))
+
+
+@app.get("/api/empresas/todas", response_model=List[EmpresaOut])
+def api_todas_empresas(db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
+    return listar_todas_empresas(db)
+
+
+@app.get("/api/empresas/{ruc}", response_model=FichaEmpresaOut)
+def api_obtener_empresa(ruc: str, db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
+    empresa = obtener_empresa_por_ruc(db, ruc)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    # Personas vinculadas
+    personas_out = []
+    for pe in empresa.personas_relacionadas:
+        if pe.persona and pe.persona.activo:
+            personas_out.append(PersonaEmpresaEmpresaOut(
+                id=pe.id,
+                persona=PersonaBrief.model_validate(pe.persona),
+                cargo=pe.cargo,
+                fecha_desde=pe.fecha_desde,
+                fecha_hasta=pe.fecha_hasta,
+                observacion=pe.observacion,
+            ))
+
+    etiquetas_out = [EmpresaEtiquetaOut.model_validate(ee) for ee in empresa.etiquetas_asignadas]
+
+    return FichaEmpresaOut(
+        empresa=EmpresaOut.model_validate(empresa),
+        personas_vinculadas=personas_out,
+        etiquetas=etiquetas_out,
+    )
+
+
+@app.put("/api/empresas/{ruc}", response_model=EmpresaOut)
+def api_actualizar_empresa(ruc: str, datos: EmpresaUpdate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    empresa = actualizar_empresa(db, ruc, datos)
+    if not empresa:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    registrar_auditoria(db, user.id, user.username, "UPDATE", "Empresa", ruc, datos.model_dump(exclude_unset=True))
+    return empresa
+
+
+@app.delete("/api/empresas/{ruc}", status_code=status.HTTP_204_NO_CONTENT)
+def api_eliminar_empresa(ruc: str, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    eliminado = eliminar_empresa(db, ruc)
+    if not eliminado:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    registrar_auditoria(db, user.id, user.username, "DELETE", "Empresa", ruc)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERSONA ↔ EMPRESA (vinculos)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/persona-empresa", status_code=status.HTTP_201_CREATED)
+def api_vincular_persona_empresa(datos: PersonaEmpresaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    try:
+        vinculo = vincular_persona_empresa(db, datos)
+        registrar_auditoria(db, user.id, user.username, "CREATE", "PersonaEmpresa", f"{datos.persona_dni}/{datos.empresa_ruc}", datos.model_dump())
+        return {
+            "mensaje": f"{vinculo.persona.nombre_completo} vinculado a {vinculo.empresa.nombre} como '{vinculo.cargo}'",
+            "id": vinculo.id,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@app.delete("/api/persona-empresa/{vinculo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def api_desvincular_persona_empresa(vinculo_id: int, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    if not desvincular_persona_empresa(db, vinculo_id):
+        raise HTTPException(status_code=404, detail="Vinculo no encontrado")
+    registrar_auditoria(db, user.id, user.username, "DELETE", "PersonaEmpresa", str(vinculo_id))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMPRESA ETIQUETAS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/empresas/{ruc}/etiquetas", status_code=status.HTTP_201_CREATED)
+def api_asignar_etiqueta_empresa(ruc: str, datos: EmpresaEtiquetaAssign, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    empresa = obtener_empresa_por_ruc(db, ruc)
+    if not empresa: raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    try:
+        asignacion = asignar_etiqueta_empresa(db, empresa.id, datos)
+        registrar_auditoria(db, user.id, user.username, "CREATE", "EmpresaEtiqueta", f"{ruc}/{datos.etiqueta_nombre}")
+        return {"mensaje": f"Etiqueta '{datos.etiqueta_nombre}' asignada a {empresa.nombre}", "id": asignacion.id}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.delete("/api/empresas/{ruc}/etiquetas/{etiqueta_nombre}", status_code=status.HTTP_204_NO_CONTENT)
+def api_desasignar_etiqueta_empresa(ruc: str, etiqueta_nombre: str, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    empresa = obtener_empresa_por_ruc(db, ruc)
+    if not empresa: raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    if not desasignar_etiqueta_empresa(db, empresa.id, etiqueta_nombre):
+        raise HTTPException(status_code=404, detail="Etiqueta no encontrada en esta empresa")
+    registrar_auditoria(db, user.id, user.username, "DELETE", "EmpresaEtiqueta", f"{ruc}/{etiqueta_nombre}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -406,33 +482,33 @@ def api_db_importar(personas: List[PersonaCreate], db: Session = Depends(get_db)
             errores.append(f"DNI {datos.dni}: {str(e)}")
     db.commit()
     registrar_auditoria(db, user.id, user.username, "CREATE", "Importar", f"{creados} personas")
-    return {"mensaje": f"Importación completada: {creados} creados, {len(errores)} errores", "creados": creados, "errores": errores}
+    return {"mensaje": f"Importacion completada: {creados} creados, {len(errores)} errores", "creados": creados, "errores": errores}
+
+
+@app.post("/api/db/reset")
+def api_db_reset(confirmacion: dict = Body(...), db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    """Elimina TODOS los datos de la base de datos."""
+    if confirmacion.get("confirmacion") != "RESET":
+        raise HTTPException(status_code=400, detail="Debe enviar confirmacion: 'RESET'")
+    from sqlalchemy import text
+    tablas = [
+        "empresa_etiqueta", "persona_etiqueta", "persona_empresa",
+        "empresas", "relaciones", "etiquetas", "personas", "auditoria",
+    ]
+    for tabla in tablas:
+        db.execute(text(f"TRUNCATE TABLE {tabla} RESTART IDENTITY CASCADE"))
+    db.commit()
+    registrar_auditoria(db, user.id, user.username, "DELETE", "Reset", "TODOS", {"accion": "reset_total"})
+    return {"mensaje": "Base de datos reiniciada exitosamente. Todas las tablas han sido limpiadas."}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SMART IMPORTER - parses LEDER DATA format
+# SMART IMPORTER
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/db/importar-inteligente", status_code=status.HTTP_201_CREATED)
-def api_importar_inteligente(
-    texto: dict = Body(...),
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
-    """
-    Importador inteligente. Soporta dos modos:
-
-    MODO LEDER DATA (individual):
-      {"texto": "DNI: 44124016\nNOMBRES: DUBAL DANTE\nAPELLIDOS: OLANO ROMERO\n..."}
-
-    MODO BATCH RUC 10 (lista masiva):
-      {"texto": "10011477432\tCORIAT CELIS ENRIQUE\n10027726459\tJARAMILLO CALLE RICARDO\n...",
-       "etiqueta": "PROVEEDOR 2019-2022"}
-
-    En modo batch, extrae DNI del RUC 10 (posiciones 2-9) y asigna
-    automaticamente la etiqueta a todas las personas creadas.
-    """
-    from models import PersonaTrabajo, PersonaEtiqueta as PE, Etiqueta as ET
+def api_importar_inteligente(texto: dict = Body(...), db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    from models import PersonaEtiqueta as PE, Etiqueta as ET
     try:
         return _batch_import(texto, db, user)
     except HTTPException:
@@ -442,19 +518,16 @@ def api_importar_inteligente(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 def _batch_import(texto, db, user):
-    from models import PersonaTrabajo, PersonaEtiqueta as PE, Etiqueta as ET
+    from models import PersonaEtiqueta as PE, Etiqueta as ET, PersonaEmpresa as PEM, Empresa as EMP
     raw = texto.get("texto", "")
     etiqueta_nombre = texto.get("etiqueta", "").strip()
 
-    # ── DETECTAR MODO ──────────────────────────────────────────────────────
-    primera_linea = raw.strip().split("\n")[0] if raw.strip() else ""
-    es_batch = "\t" in primera_linea or (len(primera_linea) >= 11 and primera_linea[2:10].isdigit())
+    primera_linea = raw.strip().split("
+")[0] if raw.strip() else ""
+    es_batch = "	" in primera_linea or (len(primera_linea) >= 11 and primera_linea[2:10].isdigit())
 
-        # ── MODO BATCH RUC 10 ─────────────────────────────────────────────────
     if es_batch:
         errores = []
-
-        # Crear/obtener etiqueta
         etiqueta_id = None
         if etiqueta_nombre:
             e_existente = db.query(ET).filter(ET.nombre == etiqueta_nombre).first()
@@ -464,99 +537,127 @@ def _batch_import(texto, db, user):
                 db.flush()
             etiqueta_id = e_existente.id
 
-        # ── PARSEAR TODAS LAS LÍNEAS ────────────────────────────────────────
-        personas_por_dni = {}  # dni -> (nombres, ap_paterno, ap_materno)
-        for line in raw.strip().split("\n"):
+        # Clasificar por tipo de RUC
+        personas_data = {}
+        empresas_data = {}
+        for line in raw.strip().split("
+"):
             line = line.strip()
-            if not line: continue
-
-            parts = line.split("\t")
+            if not line:
+                continue
+            parts = line.split("	")
             ruc = parts[0].strip() if len(parts) > 0 else ""
             nombre_completo = parts[1].strip() if len(parts) > 1 else ""
             if not nombre_completo:
                 m = re.match(r"^(\d{11})\s+(.+)", line)
-                if m: ruc = m.group(1); nombre_completo = m.group(2).strip()
-            if not nombre_completo: continue
+                if m:
+                    ruc = m.group(1)
+                    nombre_completo = m.group(2).strip()
+            if not nombre_completo:
+                continue
+            if len(ruc) != 11 or not ruc.isdigit():
+                errores.append(f"RUC invalido ({ruc}): {nombre_completo}")
+                continue
 
-            dni = None
-            if len(ruc) == 11 and ruc[2:10].isdigit(): dni = ruc[2:10]
-            elif len(ruc) == 8 and ruc.isdigit(): dni = ruc
-            if not dni: errores.append(f"RUC invalido: {nombre_completo}"); continue
-
-            nombre_parts = nombre_completo.split()
-            if len(nombre_parts) >= 3:
-                ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = " ".join(nombre_parts[2:])
-            elif len(nombre_parts) == 2:
-                ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = ""
+            pd = ruc[0]
+            if pd == "1":
+                dni = ruc[2:10]
+                if not dni.isdigit():
+                    errores.append(f"DNI invalido en RUC {ruc}: {nombre_completo}")
+                    continue
+                nombre_parts = nombre_completo.split()
+                if len(nombre_parts) >= 3:
+                    ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = " ".join(nombre_parts[2:])
+                elif len(nombre_parts) == 2:
+                    ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = ""
+                else:
+                    ap_p = nombre_parts[0] if nombre_parts else ""; ap_m = None; nom = ""
+                personas_data[dni] = (nom, ap_p, ap_m)
+            elif pd in ("2", "3"):
+                empresas_data[ruc] = nombre_completo
             else:
-                ap_p = nombre_parts[0] if nombre_parts else ""; ap_m = None; nom = ""
-            personas_por_dni[dni] = (nom, ap_p, ap_m)  # deduplicado por DNI
+                errores.append(f"Tipo RUC no reconocido ({pd}): {nombre_completo}")
 
-        if not personas_por_dni:
+        tp = len(personas_data)
+        te = len(empresas_data)
+        if tp == 0 and te == 0:
             return SmartImportOut(mensaje="No se encontraron datos validos", persona_dni=None, errores=errores)
 
-        # ── CONSULTAR EXISTENTES EN UNA SOLA QUERY ──────────────────────────
-        dnis_existentes = set(
-            row[0] for row in db.query(Persona.dni).filter(Persona.dni.in_(list(personas_por_dni.keys()))).all()
-        )
-        dnis_existentes_etiqueta = set()
-        if etiqueta_id and dnis_existentes:
-            dnis_existentes_etiqueta = set(
-                row[0] for row in db.query(Persona.dni).join(PE, PE.persona_id == Persona.id).filter(
-                    Persona.dni.in_(list(dnis_existentes)), PE.etiqueta_id == etiqueta_id
-                ).all()
-            )
-
-        # ── BULK INSERT (un solo lote) ──────────────────────────────────────
-        objects_to_add = []
-        persona_dni_id_map = {}  # dni -> id after flush
-        creados = 0
-        for dni, (nom, ap_p, ap_m) in personas_por_dni.items():
-            if dni not in dnis_existentes:
-                p = Persona(dni=dni, nombres=nom, apellido_paterno=ap_p, apellido_materno=ap_m)
-                objects_to_add.append(p)
-                creados += 1
-
-        if objects_to_add:
-            db.add_all(objects_to_add)
-            db.flush()  # Solo 1 flush para todos
-            for p in objects_to_add:
-                persona_dni_id_map[p.dni] = p.id
-
-        # ── BULK TAG ASSIGNMENT ────────────────────────────────────────────
-        tag_objects = []
-        tags_asignados = 0
-        if etiqueta_id:
-            for dni, (nom, ap_p, ap_m) in personas_por_dni.items():
-                pid = persona_dni_id_map.get(dni)
-                if not pid:
-                    if dni in dnis_existentes and dni not in dnis_existentes_etiqueta:
+        # PERSONAS (RUC 10)
+        pc = 0; pet = 0
+        if personas_data:
+            dnis_exist = set(row[0] for row in db.query(Persona.dni).filter(Persona.dni.in_(list(personas_data.keys()))).all())
+            dnis_exist_tag = set()
+            if etiqueta_id and dnis_exist:
+                dnis_exist_tag = set(row[0] for row in db.query(Persona.dni).join(PE, PE.persona_id == Persona.id).filter(Persona.dni.in_(list(dnis_exist)), PE.etiqueta_id == etiqueta_id).all())
+            objs = []; dni_id_map = {}
+            for dni, (nom, ap_p, ap_m) in personas_data.items():
+                if dni not in dnis_exist:
+                    objs.append(Persona(dni=dni, nombres=nom, apellido_paterno=ap_p, apellido_materno=ap_m))
+                    pc += 1
+            if objs:
+                db.add_all(objs); db.flush()
+                for p in objs: dni_id_map[p.dni] = p.id
+            tag_objs = []
+            if etiqueta_id:
+                for dni, _ in personas_data.items():
+                    pid = dni_id_map.get(dni)
+                    if not pid and dni in dnis_exist and dni not in dnis_exist_tag:
                         pid_row = db.query(Persona.id).filter(Persona.dni == dni).first()
                         pid = pid_row[0] if pid_row else None
-                if pid:
-                    tag_objects.append(PE(persona_id=pid, etiqueta_id=etiqueta_id))
-                    tags_asignados += 1
+                    if pid:
+                        tag_objs.append(PE(persona_id=pid, etiqueta_id=etiqueta_id))
+                        pet += 1
+                if tag_objs: db.add_all(tag_objs)
 
-        if tag_objects:
-            db.add_all(tag_objects)
+        # EMPRESAS (RUC 20/30)
+        ec = 0; eet = 0
+        if empresas_data:
+            rucs_exist = set(row[0] for row in db.query(EMP.ruc).filter(EMP.ruc.in_(list(empresas_data.keys()))).all())
+            rucs_exist_tag = set()
+            if etiqueta_id and rucs_exist:
+                rucs_exist_tag = set(row[0] for row in db.query(EMP.ruc).join(EmpresaEtiqueta, EmpresaEtiqueta.empresa_id == EMP.id).filter(EMP.ruc.in_(list(rucs_exist)), EmpresaEtiqueta.etiqueta_id == etiqueta_id).all())
+            e_objs = []; ruc_id_map = {}
+            for ruc, nombre in empresas_data.items():
+                if ruc not in rucs_exist:
+                    e_objs.append(EMP(ruc=ruc, nombre=nombre))
+                    ec += 1
+            if e_objs:
+                db.add_all(e_objs); db.flush()
+                for e in e_objs: ruc_id_map[e.ruc] = e.id
+            etag_objs = []
+            if etiqueta_id:
+                for ruc, _ in empresas_data.items():
+                    eid = ruc_id_map.get(ruc)
+                    if not eid and ruc in rucs_exist and ruc not in rucs_exist_tag:
+                        eid_row = db.query(EMP.id).filter(EMP.ruc == ruc).first()
+                        eid = eid_row[0] if eid_row else None
+                    if eid:
+                        etag_objs.append(EmpresaEtiqueta(empresa_id=eid, etiqueta_id=etiqueta_id))
+                        eet += 1
+                if etag_objs: db.add_all(etag_objs)
 
-        # ── ÚNICO COMMIT ────────────────────────────────────────────────────
         db.commit()
-        registrar_auditoria(db, user.id, user.username, "CREATE", "ImportarBatch", f"{creados} creados" + (f" etiqueta={etiqueta_nombre}" if etiqueta_nombre else ""))
-
+        tet = pet + eet
+        partes = []
+        if pc > 0: partes.append(f"{pc} persona(s) creada(s)")
+        if ec > 0: partes.append(f"{ec} empresa(s) creada(s)")
+        if tet > 0: partes.append(f"{tet} etiquetado(s) como '{etiqueta_nombre}'")
+        if not partes: partes.append("Todo ya existia")
         return SmartImportOut(
-            mensaje=f"Batch: {creados} creados, {tags_asignados} etiquetados" + (f" como '{etiqueta_nombre}'" if etiqueta_nombre else ""),
+            mensaje=f"Batch: {', '.join(partes)}",
             persona_dni=None,
+            personas_creadas=pc,
+            empresas_creadas=ec,
+            etiquetados=tet,
             errores=errores,
         )
-
-    # ── MODO LEDER DATA (individual) ──────────────────────────────────────# ── MODO LEDER DATA (individual) ──────────────────────────────────────
+    # ── MODO LEDER DATA (individual) ──
     errores = []
     persona = None
     trabajo_reg = None
     familiares_creados = 0
 
-    # Create tag if specified (for individual import)
     etiqueta_id = None
     if etiqueta_nombre:
         e_existente = db.query(ET).filter(ET.nombre == etiqueta_nombre).first()
@@ -566,13 +667,11 @@ def _batch_import(texto, db, user):
             db.flush()
         etiqueta_id = e_existente.id
 
-    # --- Extract DNI ---
     m = re.search(r'DNI\s*:\s*(\d+)', raw)
     dni = m.group(1).strip() if m else None
     if not dni:
         raise HTTPException(status_code=400, detail="No se encontro DNI en el texto")
 
-    # --- Extract names ---
     m_nombres = re.search(r'NOMBRES\s*:\s*(.+)', raw)
     m_ape = re.search(r'APELLIDOS\s*:\s*(.+)', raw)
     m_fec = re.search(r'FECHA NACIMIENTO\s*:\s*(\d{2}/\d{2}/\d{4})', raw)
@@ -590,7 +689,6 @@ def _batch_import(texto, db, user):
         try: fecha_nac = datetime.strptime(m_fec.group(1), "%d/%m/%Y").date()
         except: pass
 
-    # --- Create or update persona ---
     from models import Persona as P
     existente = db.query(P).filter(P.dni == dni).first()
     if existente: persona = existente
@@ -598,22 +696,25 @@ def _batch_import(texto, db, user):
         persona = P(dni=dni, nombres=nombres, apellido_paterno=ap_paterno, apellido_materno=ap_materno, fecha_nacimiento=fecha_nac)
         db.add(persona)
         db.flush()
-        # Assign tag if specified
         if etiqueta_id:
             db.add(PE(persona_id=persona.id, etiqueta_id=etiqueta_id))
 
-    # --- Extract TRABAJOS section ---
     m_trabajo_rs = re.search(r'RAZON SOCIAL\s*:\s*(.+)', raw)
     if m_trabajo_rs:
-        empresa = m_trabajo_rs.group(1).strip()
-        if empresa and empresa != "No se encontro":
-            t_existente = db.query(PersonaTrabajo).filter(PersonaTrabajo.persona_id == persona.id, PersonaTrabajo.empresa_nombre == empresa).first()
-            if not t_existente:
-                db.add(PersonaTrabajo(persona_id=persona.id, empresa_nombre=empresa))
-                trabajo_reg = empresa
+        empresa_nombre = m_trabajo_rs.group(1).strip()
+        if empresa_nombre and empresa_nombre != "No se encontro":
+            emp_existente = db.query(EMP).filter(EMP.nombre == empresa_nombre, EMP.activo == True).first()
+            if not emp_existente:
+                emp_existente = EMP(ruc=f"AUTO-{persona.dni}", nombre=empresa_nombre)
+                db.add(emp_existente)
+                db.flush()
+            vinculo_existente = db.query(PEM).filter(PEM.persona_id == persona.id, PEM.empresa_id == emp_existente.id, PEM.cargo == "trabajador").first()
+            if not vinculo_existente:
+                db.add(PEM(persona_id=persona.id, empresa_id=emp_existente.id, cargo="trabajador"))
+                trabajo_reg = empresa_nombre
 
-    # --- Extract FAMILIA section ---
-    lines = raw.split('\n')
+    lines = raw.split('
+')
     current_block = {}
     for i, line in enumerate(lines):
         line_stripped = line.strip()
@@ -662,22 +763,67 @@ def _batch_import(texto, db, user):
     return SmartImportOut(mensaje=mensaje, persona_dni=persona.dni, familiares_creados=familiares_creados, empresa_registrada=trabajo_reg, errores=errores)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# STATS (actualizado con empresas)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/stats", response_model=StatsOut)
+def api_stats(db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
+    from sqlalchemy import text
+    total_personas = db.query(Persona).filter(Persona.activo == True).count()
+    total_relaciones = db.query(Relacion).count()
+    total_empresas = db.query(Empresa).filter(Empresa.activo == True).count()
+    total_persona_empresa = db.query(PersonaEmpresa).count()
+
+    # Personas por etiqueta
+    tags_data = db.execute(text("""
+        SELECT e.nombre, COUNT(pe.id) as cnt FROM etiquetas e
+        JOIN persona_etiqueta pe ON pe.etiqueta_id = e.id
+        GROUP BY e.nombre ORDER BY cnt DESC LIMIT 10
+    """)).fetchall()
+    personas_por_etiqueta = [TagStats(nombre=r[0], cantidad=r[1]) for r in tags_data]
+
+    # Personas por empresa (nuevo: desde persona_empresa)
+    empresa_data = db.execute(text("""
+        SELECT e.nombre, COUNT(pe.id) as cnt FROM empresas e
+        JOIN persona_empresa pe ON pe.empresa_id = e.id
+        GROUP BY e.nombre ORDER BY cnt DESC LIMIT 10
+    """)).fetchall()
+    personas_por_empresa = [EmpresaStats(empresa=r[0], cantidad=r[1]) for r in empresa_data]
+
+    # Empresas por etiqueta
+    emp_tags_data = db.execute(text("""
+        SELECT e.nombre, COUNT(ee.id) as cnt FROM etiquetas e
+        JOIN empresa_etiqueta ee ON ee.etiqueta_id = e.id
+        GROUP BY e.nombre ORDER BY cnt DESC LIMIT 10
+    """)).fetchall()
+    empresas_por_etiqueta = [TagStats(nombre=r[0], cantidad=r[1]) for r in emp_tags_data]
+
+    return StatsOut(
+        total_personas=total_personas,
+        total_relaciones=total_relaciones,
+        total_empresas=total_empresas,
+        total_persona_empresa=total_persona_empresa,
+        personas_por_etiqueta=personas_por_etiqueta,
+        personas_por_empresa=personas_por_empresa,
+        empresas_por_etiqueta=empresas_por_etiqueta,
+    )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# AUDITORÍA
+# AUDITORIA
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/auditoria", response_model=AuditoriaLista)
 def api_auditoria(
-    entidad: Optional[str] = Query(None, description="Filtrar por entidad: Persona, Relacion, Etiqueta"),
-    accion: Optional[str] = Query(None, description="Filtrar por accion: CREATE, UPDATE, DELETE"),
-    username: Optional[str] = Query(None, description="Filtrar por usuario"),
-    desde: Optional[str] = Query(None, description="Desde fecha ISO"),
+    entidad: Optional[str] = Query(None),
+    accion: Optional[str] = Query(None),
+    username: Optional[str] = Query(None),
+    desde: Optional[str] = Query(None),
     limite: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
     user: Usuario = Depends(requiere_rol("admin")),
 ):
-    """Historial de cambios. Solo admin."""
     q = db.query(Auditoria)
     if entidad: q = q.filter(Auditoria.entidad == entidad)
     if accion: q = q.filter(Auditoria.accion == accion)
@@ -692,45 +838,17 @@ def api_auditoria(
     return AuditoriaLista(resultados=[AuditoriaOut.model_validate(r) for r in resultados], total=len(resultados))
 
 
-# ═══ STATS ═══
-
-@app.get("/api/stats", response_model=dict)
-def api_stats(db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
-    """Estadísticas del dashboard."""
-    from models import Persona as P, Relacion as R, Etiqueta as ET, PersonaEtiqueta as PE, PersonaTrabajo as PT
-    total_personas = db.query(P).filter(P.activo == True).count()
-    total_relaciones = db.query(R).count()
-    total_trabajos = db.query(PT).count()
-
-    # Personas por etiqueta
-    tags_data = db.execute(text("""
-        SELECT e.nombre, COUNT(pe.id) as cnt FROM etiquetas e
-        JOIN persona_etiqueta pe ON pe.etiqueta_id = e.id
-        GROUP BY e.nombre ORDER BY cnt DESC LIMIT 10
-    """)).fetchall()
-    personas_por_etiqueta = [{"nombre": r[0], "cantidad": r[1]} for r in tags_data]
-
-    # Personas por empresa
-    empresa_data = db.execute(text("""
-        SELECT pt.empresa_nombre, COUNT(pt.id) as cnt FROM persona_trabajo pt
-        GROUP BY pt.empresa_nombre ORDER BY cnt DESC LIMIT 10
-    """)).fetchall()
-    personas_por_empresa = [{"empresa": r[0], "cantidad": r[1]} for r in empresa_data]
-
-    from sqlalchemy import text
-    return {
-        "total_personas": total_personas,
-        "total_relaciones": total_relaciones,
-        "total_trabajos": total_trabajos,
-        "personas_por_etiqueta": personas_por_etiqueta,
-        "personas_por_empresa": personas_por_empresa,
-    }
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# HEALTH CHECK
+# HEALTH
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "app": "RedCorruptela", "version": "0.2.0"}
+    return {"status": "ok", "app": "RedCorruptela", "version": "0.3.0"}
+��════
+# HEALTH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "app": "RedCorruptela", "version": "0.3.0"}
