@@ -384,7 +384,7 @@ def api_enriquecer_todas_empresas(
         "ruc_actual": "",
     }
 
-    background_tasks.add_task(_ejecutar_enriquecimiento, db, user)
+    background_tasks.add_task(_ejecutar_enriquecimiento, user.id, user.username)
     return {"mensaje": "Enriquecimiento iniciado en background", "total_empresas": len(listar_todas_empresas(db))}
 
 
@@ -521,55 +521,70 @@ _progreso_enriquecer = {
 }
 
 
-def _ejecutar_enriquecimiento(db: Session, user: Usuario):
-    """Ejecuta el enriquecimiento en background (llamado por BackgroundTasks)."""
+def _ejecutar_enriquecimiento(user_id: int, user_username: str):
+    """
+    Ejecuta el enriquecimiento en background.
+
+    Crea su propia sesion de BD porque la sesion del endpoint
+    ya fue cerrada por FastAPI cuando BackgroundTasks ejecuta.
+    """
     global _progreso_enriquecer
     from consultas.sunat_scraper import SunatScraper
-    empresas = listar_todas_empresas(db)
-    total = len(empresas)
-    _progreso_enriquecer["total"] = total
-    _progreso_enriquecer["actualizadas"] = 0
-    _progreso_enriquecer["errores"] = []
-    _progreso_enriquecer["mensaje"] = "Iniciando..."
-    _progreso_enriquecer["ruc_actual"] = ""
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        empresas = listar_todas_empresas(db)
+        total = len(empresas)
+        _progreso_enriquecer["total"] = total
+        _progreso_enriquecer["actualizadas"] = 0
+        _progreso_enriquecer["errores"] = []
+        _progreso_enriquecer["mensaje"] = "Iniciando..."
+        _progreso_enriquecer["ruc_actual"] = ""
 
-    scraper = SunatScraper()
-    for i, emp in enumerate(empresas):
-        if not _progreso_enriquecer.get("activo", True):
-            _progreso_enriquecer["mensaje"] = "Cancelado por el usuario"
-            db.rollback()
-            return
+        scraper = SunatScraper()
+        for i, emp in enumerate(empresas):
+            if not _progreso_enriquecer.get("activo", True):
+                _progreso_enriquecer["mensaje"] = "Cancelado por el usuario"
+                db.rollback()
+                return
 
-        _progreso_enriquecer["ruc_actual"] = emp.ruc
-        try:
-            data = scraper.consultar_ruc(emp.ruc)
-            if data.get("nombre_o_razon_social"):
-                emp.nombre = data["nombre_o_razon_social"]
-            if data.get("direccion"):
-                emp.direccion = data["direccion"]
-            for campo in ["estado", "condicion", "tipo_contribuyente", "nombre_comercial",
-                          "fecha_inscripcion", "fecha_inicio_actividades", "sistema_contabilidad",
-                          "actividad_comercio_exterior", "actividad_economica",
-                          "comprobantes_autorizados", "sistema_emision", "afiliado_ple"]:
-                val = data.get(campo)
-                if val:
-                    setattr(emp, campo, val)
-            if data.get("representante_legal"):
-                emp.representante_legal_dni = data["representante_legal"].get("dni") or emp.representante_legal_dni
-                emp.representante_legal_nombre = data["representante_legal"].get("nombre") or emp.representante_legal_nombre
-            db.flush()
-            _progreso_enriquecer["actualizadas"] += 1
-        except Exception as e:
-            _progreso_enriquecer["errores"].append({"ruc": emp.ruc, "error": str(e)[:80]})
+            _progreso_enriquecer["ruc_actual"] = emp.ruc
+            try:
+                data = scraper.consultar_ruc(emp.ruc)
+                if data.get("nombre_o_razon_social"):
+                    emp.nombre = data["nombre_o_razon_social"]
+                if data.get("direccion"):
+                    emp.direccion = data["direccion"]
+                for campo in ["estado", "condicion", "tipo_contribuyente", "nombre_comercial",
+                              "fecha_inscripcion", "fecha_inicio_actividades", "sistema_contabilidad",
+                              "actividad_comercio_exterior", "actividad_economica",
+                              "comprobantes_autorizados", "sistema_emision", "afiliado_ple"]:
+                    val = data.get(campo)
+                    if val:
+                        setattr(emp, campo, val)
+                if data.get("representante_legal"):
+                    emp.representante_legal_dni = data["representante_legal"].get("dni") or emp.representante_legal_dni
+                    emp.representante_legal_nombre = data["representante_legal"].get("nombre") or emp.representante_legal_nombre
+                db.flush()
+                _progreso_enriquecer["actualizadas"] += 1
+            except Exception as e:
+                _progreso_enriquecer["errores"].append({"ruc": emp.ruc, "error": str(e)[:80]})
 
-        _progreso_enriquecer["mensaje"] = f"Procesando {i+1}/{total}..."
+            _progreso_enriquecer["mensaje"] = f"Procesando {i+1}/{total}..."
 
-    db.commit()
-    _progreso_enriquecer["activo"] = False
-    a = _progreso_enriquecer["actualizadas"]
-    e = len(_progreso_enriquecer["errores"])
-    _progreso_enriquecer["mensaje"] = f"Completado: {a}/{total} empresas enriquecidas ({e} errores)"
-    registrar_auditoria(db, user.id, user.username, "UPDATE", "Empresa", "TODAS", {"accion": "enriquecer_todas_sunat", "procesadas": a, "errores": e})
+        db.commit()
+        _progreso_enriquecer["activo"] = False
+        a = _progreso_enriquecer["actualizadas"]
+        e = len(_progreso_enriquecer["errores"])
+        _progreso_enriquecer["mensaje"] = f"Completado: {a}/{total} empresas enriquecidas ({e} errores)"
+        registrar_auditoria(db, user_id, user_username, "UPDATE", "Empresa", "TODAS",
+                           {"accion": "enriquecer_todas_sunat", "procesadas": a, "errores": e})
+    except Exception as ex:
+        db.rollback()
+        _progreso_enriquecer["activo"] = False
+        _progreso_enriquecer["mensaje"] = f"Error general: {ex}"
+    finally:
+        db.close()
 
 
 
