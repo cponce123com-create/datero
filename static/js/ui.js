@@ -16,6 +16,28 @@ function st(msg, type) {
     AppState.set("toastTimer", setTimeout(function() { t.classList.add("hidden"); }, 4000));
 }
 
+
+/* ─── Login ─── */
+document.getElementById("form-login").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    var u = document.getElementById("login-user").value.trim();
+    var p = document.getElementById("login-pass").value.trim();
+    if (!u || !p) return;
+    var btn = e.target.querySelector("button[type=submit]");
+    btn.disabled = true; btn.textContent = "Ingresando...";
+    try {
+        var r = await fetch(A + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: u, password: p }) });
+        if (!r.ok) { var ed = await r.json(); throw new Error(ed.detail || "Error"); }
+        var d = await r.json();
+        setAuth(d.access_token, d.username, d.rol);
+        hl();
+        if (d.rol === "lector") st("Modo lectura: solo puede ver datos", "info");
+        _init();
+    } catch (err) { st(err.message, "error"); }
+    btn.disabled = false; btn.textContent = "Ingresar";
+});
+
+
 /* ─── Modals ─── */
 function om(id) { document.getElementById(id).classList.remove("hidden"); }
 function cm(id) { document.getElementById(id).classList.add("hidden"); }
