@@ -9,7 +9,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query, status, Body, Request
+from fastapi import FastAPI, Depends, HTTPException, Query, status, Body, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -466,45 +466,106 @@ def api_enriquecer_empresa(ruc: str, db: Session = Depends(get_db), user: Usuari
     return {"mensaje": f"Empresa {ruc} enriquecida desde SUNAT", "campos_actualizados": len([v for v in data.values() if v])}
 
 
-@app.post("/api/empresas/enriquecer-todas", response_model=dict)
-def api_enriquecer_todas_empresas(db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
-    """Enriquece todas las empresas activas desde SUNAT (ejecucion secuencial)."""
+# ── Progreso de enriquecimiento (en memoria) ─────────────────────────────
+_progreso_enriquecer = {
+    "activo": False,
+    "total": 0,
+    "actualizadas": 0,
+    "errores": [],
+    "mensaje": "",
+    "ruc_actual": "",
+}
+
+
+def _ejecutar_enriquecimiento(db: Session, user: Usuario):
+    """Ejecuta el enriquecimiento en background (llamado por BackgroundTasks)."""
+    global _progreso_enriquecer
     from consultas.sunat_scraper import SunatScraper
     empresas = listar_todas_empresas(db)
     total = len(empresas)
-    actualizadas = 0
-    errores = []
+    _progreso_enriquecer["total"] = total
+    _progreso_enriquecer["actualizadas"] = 0
+    _progreso_enriquecer["errores"] = []
+    _progreso_enriquecer["mensaje"] = "Iniciando..."
+    _progreso_enriquecer["ruc_actual"] = ""
 
     scraper = SunatScraper()
     for i, emp in enumerate(empresas):
+        if not _progreso_enriquecer.get("activo", True):
+            _progreso_enriquecer["mensaje"] = "Cancelado por el usuario"
+            db.rollback()
+            return
+
+        _progreso_enriquecer["ruc_actual"] = emp.ruc
         try:
             data = scraper.consultar_ruc(emp.ruc)
             if data.get("nombre_o_razon_social"):
                 emp.nombre = data["nombre_o_razon_social"]
             if data.get("direccion"):
                 emp.direccion = data["direccion"]
-            emp.estado = data.get("estado") or emp.estado
-            emp.condicion = data.get("condicion") or emp.condicion
-            emp.tipo_contribuyente = data.get("tipo_contribuyente") or emp.tipo_contribuyente
-            emp.nombre_comercial = data.get("nombre_comercial") or emp.nombre_comercial
-            emp.fecha_inscripcion = data.get("fecha_inscripcion") or emp.fecha_inscripcion
-            emp.fecha_inicio_actividades = data.get("fecha_inicio_actividades") or emp.fecha_inicio_actividades
+            for campo in ["estado", "condicion", "tipo_contribuyente", "nombre_comercial",
+                          "fecha_inscripcion", "fecha_inicio_actividades", "sistema_contabilidad",
+                          "actividad_comercio_exterior", "actividad_economica",
+                          "comprobantes_autorizados", "sistema_emision", "afiliado_ple"]:
+                val = data.get(campo)
+                if val:
+                    setattr(emp, campo, val)
             if data.get("representante_legal"):
                 emp.representante_legal_dni = data["representante_legal"].get("dni") or emp.representante_legal_dni
                 emp.representante_legal_nombre = data["representante_legal"].get("nombre") or emp.representante_legal_nombre
             db.flush()
-            actualizadas += 1
+            _progreso_enriquecer["actualizadas"] += 1
         except Exception as e:
-            errores.append(f"{emp.ruc}: {str(e)[:60]}")
+            _progreso_enriquecer["errores"].append({"ruc": emp.ruc, "error": str(e)[:80]})
+
+        _progreso_enriquecer["mensaje"] = f"Procesando {i+1}/{total}..."
 
     db.commit()
-    registrar_auditoria(db, user.id, user.username, "UPDATE", "Empresa", "TODAS", {"accion": "enriquecer_todas_sunat"})
+    _progreso_enriquecer["activo"] = False
+    a = _progreso_enriquecer["actualizadas"]
+    e = len(_progreso_enriquecer["errores"])
+    _progreso_enriquecer["mensaje"] = f"Completado: {a}/{total} empresas enriquecidas ({e} errores)"
+    registrar_auditoria(db, user.id, user.username, "UPDATE", "Empresa", "TODAS", {"accion": "enriquecer_todas_sunat", "procesadas": a, "errores": e})
 
+
+@app.post("/api/empresas/enriquecer-todas")
+def api_enriquecer_todas_empresas(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Inicia el enriquecimiento de todas las empresas en background."""
+    global _progreso_enriquecer
+    if _progreso_enriquecer.get("activo"):
+        raise HTTPException(status_code=409, detail="Ya hay un enriquecimiento en curso")
+
+    _progreso_enriquecer = {
+        "activo": True,
+        "total": 0,
+        "actualizadas": 0,
+        "errores": [],
+        "mensaje": "Iniciando...",
+        "ruc_actual": "",
+    }
+
+    background_tasks.add_task(_ejecutar_enriquecimiento, db, user)
+    return {"mensaje": "Enriquecimiento iniciado en background", "total_empresas": len(listar_todas_empresas(db))}
+
+
+@app.get("/api/empresas/enriquecer-progreso")
+def api_enriquecer_progreso(user: Usuario = Depends(get_current_user)):
+    """Retorna el progreso del enriquecimiento en curso."""
+    global _progreso_enriquecer
+    p = _progreso_enriquecer
+    porcentaje = round((p["actualizadas"] / p["total"] * 100)) if p["total"] > 0 else 0
     return {
-        "mensaje": f"Enriquecidas {actualizadas}/{total} empresas",
-        "total": total,
-        "actualizadas": actualizadas,
-        "errores": errores[:10],
+        "activo": p.get("activo", False),
+        "total": p.get("total", 0),
+        "actualizadas": p.get("actualizadas", 0),
+        "porcentaje": porcentaje,
+        "mensaje": p.get("mensaje", ""),
+        "ruc_actual": p.get("ruc_actual", ""),
+        "errores": p.get("errores", [])[-5:],
     }
 
 

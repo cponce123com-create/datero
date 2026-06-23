@@ -753,17 +753,65 @@ async function enriquecerEmpresa(ruc) {
 }
 window.enriquecerEmpresa = enriquecerEmpresa;
 
+var _pollTimer = null;
+
 async function enriquecerTodasEmpresas() {
-    if (!confirm("Enriquecer TODAS las empresas desde SUNAT? Puede tomar varios minutos.")) return;
+    cm("modal-visorempresas");
+    om("modal-progreso");
+    document.getElementById("progreso-barra").style.width = "0%";
+    document.getElementById("progreso-texto").textContent = "0 / 0";
+    document.getElementById("progreso-ruc").textContent = "";
+    document.getElementById("progreso-errores").innerHTML = "";
+    document.getElementById("progreso-mensaje").textContent = "Iniciando...";
+    document.getElementById("btn-cancelar-enriquecer").style.display = "inline-flex";
+
     try {
         var r = await af(A + "/empresas/enriquecer-todas", { method: "POST" });
-        st(r.mensaje, r.errores && r.errores.length > 0 ? "error" : "success");
-        if (r.errores && r.errores.length > 0) {
-            st(r.mensaje + " | Errores: " + r.errores.join("; "), "error");
-        }
-    } catch (err) { st(err.message, "error"); }
+        var total = r.total_empresas || 0;
+        document.getElementById("progreso-texto").textContent = "0 / " + total;
+
+        // Polling cada 1.5 segundos
+        _pollTimer = setInterval(pollProgreso, 1500);
+        pollProgreso();  // inmediato
+    } catch (err) {
+        st(err.message, "error");
+        cm("modal-progreso");
+    }
 }
-window.enriquecerTodasEmpresas = enriquecerTodasEmpresas;
+
+async function pollProgreso() {
+    try {
+        var p = await af(A + "/empresas/enriquecer-progreso");
+        document.getElementById("progreso-barra").style.width = p.porcentaje + "%";
+        document.getElementById("progreso-texto").textContent = p.actualizadas + " / " + p.total;
+        document.getElementById("progreso-mensaje").textContent = p.mensaje || "Procesando...";
+        if (p.ruc_actual) document.getElementById("progreso-ruc").textContent = "RUC: " + p.ruc_actual;
+        if (p.errores && p.errores.length > 0) {
+            var html = p.errores.slice(-5).map(function(e) {
+                return "<div>⚠ " + e.ruc + ": " + e.error + "</div>";
+            }).join("");
+            document.getElementById("progreso-errores").innerHTML = html;
+        }
+
+        if (!p.activo) {
+            clearInterval(_pollTimer);
+            document.getElementById("btn-cancelar-enriquecer").style.display = "none";
+            document.getElementById("progreso-barra").style.background = p.porcentaje === 100 ? "var(--color-success)" : "var(--color-primary)";
+            setTimeout(function() { cm("modal-progreso"); st(p.mensaje, "success"); }, 2000);
+        }
+    } catch (err) {
+        // Si hay error al obtener progreso, dejar de poll
+        clearInterval(_pollTimer);
+    }
+}
+
+async function cancelarEnriquecimiento() {
+    if (!confirm("Cancelar el enriquecimiento en curso?")) return;
+    clearInterval(_pollTimer);
+    cm("modal-progreso");
+    st("Enriquecimiento cancelado", "info");
+}
+window.cancelarEnriquecimiento = cancelarEnriquecimiento;
 
 /* ─── Consulta DNI (RENIEC) ─── */
 async function consultarDni() {

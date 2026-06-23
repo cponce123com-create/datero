@@ -484,6 +484,29 @@
         </div>
     </div>
 
+    <!-- ═══ PROGRESO ENRIQUECER ═══ -->
+    <div id="modal-progreso" class="modal hidden">
+        <div class="modal-overlay" data-close="modal-progreso"></div>
+        <div class="modal-content" style="max-width:450px;">
+            <div class="modal-header">
+                <h2 id="progreso-titulo">🔄 Enriqueciendo empresas</h2>
+                <button class="modal-close" data-close="modal-progreso">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align:center;">
+                <div id="progreso-mensaje" style="margin-bottom:12px;color:var(--color-text-secondary);font-size:0.9rem;">Iniciando...</div>
+                <div style="background:var(--color-border);border-radius:10px;height:24px;overflow:hidden;margin-bottom:8px;">
+                    <div id="progreso-barra" style="width:0%;height:100%;background:var(--color-primary);border-radius:10px;transition:width 0.3s ease;"></div>
+                </div>
+                <div id="progreso-texto" style="font-size:0.85rem;font-weight:500;">0 / 0</div>
+                <div id="progreso-ruc" style="margin-top:8px;font-size:0.8rem;color:var(--color-text-secondary);"></div>
+                <div id="progreso-errores" style="margin-top:12px;font-size:0.8rem;color:var(--color-danger);text-align:left;max-height:100px;overflow-y:auto;"></div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-cancelar-enriquecer" class="btn btn-ghost" onclick="cancelarEnriquecimiento()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══ TOAST ═══ -->
     <div id="toast" class="toast hidden"></div>
 
