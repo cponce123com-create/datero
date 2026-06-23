@@ -522,8 +522,7 @@ def _batch_import(texto, db, user):
     raw = texto.get("texto", "")
     etiqueta_nombre = texto.get("etiqueta", "").strip()
 
-    primera_linea = raw.strip().split("
-")[0] if raw.strip() else ""
+    primera_linea = raw.strip().split("\n")[0] if raw.strip() else ""
     es_batch = "	" in primera_linea or (len(primera_linea) >= 11 and primera_linea[2:10].isdigit())
 
     if es_batch:
@@ -540,12 +539,11 @@ def _batch_import(texto, db, user):
         # Clasificar por tipo de RUC
         personas_data = {}
         empresas_data = {}
-        for line in raw.strip().split("
-"):
+        for line in raw.strip().split("\n"):
             line = line.strip()
             if not line:
                 continue
-            parts = line.split("	")
+            parts = line.split("\t")
             ruc = parts[0].strip() if len(parts) > 0 else ""
             nombre_completo = parts[1].strip() if len(parts) > 1 else ""
             if not nombre_completo:
@@ -713,8 +711,7 @@ def _batch_import(texto, db, user):
                 db.add(PEM(persona_id=persona.id, empresa_id=emp_existente.id, cargo="trabajador"))
                 trabajo_reg = empresa_nombre
 
-    lines = raw.split('
-')
+    lines = raw.split('\n')
     current_block = {}
     for i, line in enumerate(lines):
         line_stripped = line.strip()
@@ -839,13 +836,6 @@ def api_auditoria(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# HEALTH
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/api/health")
-def health_check():
-    return {"status": "ok", "app": "RedCorruptela", "version": "0.3.0"}
-��════
 # HEALTH
 # ═══════════════════════════════════════════════════════════════════════════════
 
