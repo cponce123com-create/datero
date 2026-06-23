@@ -406,28 +406,136 @@ def api_importar_inteligente(
     user: Usuario = Depends(requiere_rol("admin")),
 ):
     """
-    Importa datos desde texto en formato LEDER DATA.
-    Recibe: {"texto": "contenido completo del mensaje"}
+    Importador inteligente. Soporta dos modos:
 
-    Extrae:
-    - Persona (DNI, nombres, apellidos, fecha nacimiento, padres)
-    - Lugar de trabajo (empresa)
-    - Familiares (crea personas y relaciones automáticamente)
+    MODO LEDER DATA (individual):
+      {"texto": "DNI: 44124016\nNOMBRES: DUBAL DANTE\nAPELLIDOS: OLANO ROMERO\n..."}
+
+    MODO BATCH RUC 10 (lista masiva):
+      {"texto": "10011477432\tCORIAT CELIS ENRIQUE\n10027726459\tJARAMILLO CALLE RICARDO\n...",
+       "etiqueta": "PROVEEDOR 2019-2022"}
+
+    En modo batch, extrae DNI del RUC 10 (posiciones 2-9) y asigna
+    automaticamente la etiqueta a todas las personas creadas.
     """
-    from models import PersonaTrabajo
+    from models import PersonaTrabajo, PersonaEtiqueta as PE, Etiqueta as ET
     import re
 
     raw = texto.get("texto", "")
+    etiqueta_nombre = texto.get("etiqueta", "").strip()
+
+    # ── DETECTAR MODO ──────────────────────────────────────────────────────
+    primera_linea = raw.strip().split("\n")[0] if raw.strip() else ""
+    es_batch = "\t" in primera_linea or (len(primera_linea) >= 11 and primera_linea[:2] == "10" and primera_linea[2:10].isdigit())
+
+    # ── MODO BATCH RUC 10 ─────────────────────────────────────────────────
+    if es_batch:
+        creados = 0
+        errores = []
+        tags_asignados = 0
+
+        # Crear/obtener etiqueta
+        etiqueta_id = None
+        if etiqueta_nombre:
+            e_existente = db.query(ET).filter(ET.nombre == etiqueta_nombre).first()
+            if not e_existente:
+                e_existente = ET(nombre=etiqueta_nombre)
+                db.add(e_existente)
+                db.flush()
+            etiqueta_id = e_existente.id
+
+        for line in raw.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t")
+            ruc = parts[0].strip() if len(parts) > 0 else ""
+            nombre_completo = parts[1].strip() if len(parts) > 1 else ""
+
+            # Si no hay tab, intentar espacio como separador
+            if not nombre_completo:
+                m = re.match(r"^(\d{11})\s+(.+)", line)
+                if m:
+                    ruc = m.group(1)
+                    nombre_completo = m.group(2).strip()
+
+            if not nombre_completo:
+                continue
+
+            # Extraer DNI del RUC 10: posiciones 2-9 (0-indexed)
+            dni = None
+            if len(ruc) == 11 and ruc[:2] == "10":
+                dni = ruc[2:10]
+            elif len(ruc) == 8 and ruc.isdigit():
+                dni = ruc
+
+            if not dni:
+                errores.append(f"RUC invalido: {nombre_completo}")
+                continue
+
+            # Parsear nombre: APELLIDO1 APELLIDO2 NOMBRES...
+            nombre_parts = nombre_completo.split()
+            if len(nombre_parts) >= 3:
+                ap_paterno = nombre_parts[0]
+                ap_materno = nombre_parts[1]
+                nombres = " ".join(nombre_parts[2:])
+            elif len(nombre_parts) == 2:
+                ap_paterno = nombre_parts[0]
+                ap_materno = nombre_parts[1]
+                nombres = ""
+            else:
+                ap_paterno = nombre_parts[0] if nombre_parts else ""
+                ap_materno = None
+                nombres = ""
+
+            try:
+                existente = db.query(Persona).filter(Persona.dni == dni).first()
+                if existente:
+                    persona = existente
+                else:
+                    persona = Persona(dni=dni, nombres=nombres, apellido_paterno=ap_paterno, apellido_materno=ap_materno)
+                    db.add(persona)
+                    db.flush()
+                    creados += 1
+
+                if etiqueta_id:
+                    pe_existente = db.query(PE).filter(PE.persona_id == persona.id, PE.etiqueta_id == etiqueta_id).first()
+                    if not pe_existente:
+                        db.add(PE(persona_id=persona.id, etiqueta_id=etiqueta_id))
+                        tags_asignados += 1
+            except Exception as e:
+                errores.append(f"Error {dni}: {str(e)}")
+
+        db.commit()
+        registrar_auditoria(db, user.id, user.username, "CREATE", "ImportarBatch", f"{creados} creados" + (f" etiqueta={etiqueta_nombre}" if etiqueta_nombre else ""))
+
+        return SmartImportOut(
+            mensaje=f"Batch: {creados} creados, {tags_asignados} etiquetados" + (f" como '{etiqueta_nombre}'" if etiqueta_nombre else ""),
+            persona_dni=None,
+            errores=errores,
+        )
+
+    # ── MODO LEDER DATA (individual) ──────────────────────────────────────
     errores = []
     persona = None
     trabajo_reg = None
     familiares_creados = 0
 
+    # Create tag if specified (for individual import)
+    etiqueta_id = None
+    if etiqueta_nombre:
+        e_existente = db.query(ET).filter(ET.nombre == etiqueta_nombre).first()
+        if not e_existente:
+            e_existente = ET(nombre=etiqueta_nombre)
+            db.add(e_existente)
+            db.flush()
+        etiqueta_id = e_existente.id
+
     # --- Extract DNI ---
     m = re.search(r'DNI\s*:\s*(\d+)', raw)
     dni = m.group(1).strip() if m else None
     if not dni:
-        raise HTTPException(status_code=400, detail="No se encontró DNI en el texto")
+        raise HTTPException(status_code=400, detail="No se encontro DNI en el texto")
 
     # --- Extract names ---
     m_nombres = re.search(r'NOMBRES\s*:\s*(.+)', raw)
@@ -437,7 +545,6 @@ def api_importar_inteligente(
     nombres = m_nombres.group(1).strip() if m_nombres else ""
     apellidos = m_ape.group(1).strip() if m_ape else ""
 
-    # Split apellidos into paterno and materno
     ape_parts = apellidos.split() if apellidos else []
     ap_paterno = ape_parts[0] if len(ape_parts) > 0 else ""
     ap_materno = ape_parts[1] if len(ape_parts) > 1 else None
@@ -445,41 +552,29 @@ def api_importar_inteligente(
     fecha_nac = None
     if m_fec:
         from datetime import datetime
-        try:
-            fecha_nac = datetime.strptime(m_fec.group(1), "%d/%m/%Y").date()
-        except:
-            pass
+        try: fecha_nac = datetime.strptime(m_fec.group(1), "%d/%m/%Y").date()
+        except: pass
 
     # --- Create or update persona ---
     from models import Persona as P
-    from sqlalchemy.orm import Session as SES
     existente = db.query(P).filter(P.dni == dni).first()
-    if existente:
-        persona = existente
+    if existente: persona = existente
     else:
-        persona = P(
-            dni=dni,
-            nombres=nombres,
-            apellido_paterno=ap_paterno,
-            apellido_materno=ap_materno,
-            fecha_nacimiento=fecha_nac,
-        )
+        persona = P(dni=dni, nombres=nombres, apellido_paterno=ap_paterno, apellido_materno=ap_materno, fecha_nacimiento=fecha_nac)
         db.add(persona)
         db.flush()
+        # Assign tag if specified
+        if etiqueta_id:
+            db.add(PE(persona_id=persona.id, etiqueta_id=etiqueta_id))
 
     # --- Extract TRABAJOS section ---
-    # Look for META | TRABAJOS section followed by content containing RAZON SOCIAL
     m_trabajo_rs = re.search(r'RAZON SOCIAL\s*:\s*(.+)', raw)
     if m_trabajo_rs:
         empresa = m_trabajo_rs.group(1).strip()
         if empresa and empresa != "No se encontro":
-            t_existente = db.query(PersonaTrabajo).filter(
-                PersonaTrabajo.persona_id == persona.id,
-                PersonaTrabajo.empresa_nombre == empresa
-            ).first()
+            t_existente = db.query(PersonaTrabajo).filter(PersonaTrabajo.persona_id == persona.id, PersonaTrabajo.empresa_nombre == empresa).first()
             if not t_existente:
-                t = PersonaTrabajo(persona_id=persona.id, empresa_nombre=empresa)
-                db.add(t)
+                db.add(PersonaTrabajo(persona_id=persona.id, empresa_nombre=empresa))
                 trabajo_reg = empresa
 
     # --- Extract FAMILIA section ---
@@ -488,108 +583,49 @@ def api_importar_inteligente(
     for i, line in enumerate(lines):
         line_stripped = line.strip()
         if line_stripped.startswith('DNI') and ':' in line_stripped:
-            if current_block.get('dni') and current_block.get('tipo'):
-                pass
+            if current_block.get('dni') and current_block.get('tipo'): pass
             current_block = {'dni': line_stripped.split(':')[1].strip()}
-        elif line_stripped.startswith('APELLIDOS'):
-            current_block['apellidos'] = line_stripped.split(':')[1].strip()
-        elif line_stripped.startswith('NOMBRES'):
-            current_block['nombres'] = line_stripped.split(':')[1].strip()
-        elif line_stripped.startswith('GENERO'):
-            current_block['genero'] = line_stripped.split(':')[1].strip()
+        elif line_stripped.startswith('APELLIDOS'): current_block['apellidos'] = line_stripped.split(':')[1].strip()
+        elif line_stripped.startswith('NOMBRES'): current_block['nombres'] = line_stripped.split(':')[1].strip()
+        elif line_stripped.startswith('GENERO'): current_block['genero'] = line_stripped.split(':')[1].strip()
         elif line_stripped.startswith('TIPO') and ':' in line_stripped:
             current_block['tipo'] = line_stripped.split(':')[1].strip()
-            # Process this family member
             if current_block.get('dni') and current_block.get('tipo'):
                 try:
-                    fdni = current_block['dni']
-                    fnombres = current_block.get('nombres', '')
-                    fapellidos = current_block.get('apellidos', '')
-                    ftipo = current_block['tipo'].upper().strip()
-
-                    # Skip if this is the target person
-                    if fdni == persona.dni:
-                        continue
-
-                    # Create family member if not exists
+                    fdni = current_block['dni']; fnombres = current_block.get('nombres', ''); fapellidos = current_block.get('apellidos', ''); ftipo = current_block['tipo'].upper().strip()
+                    if fdni == persona.dni: continue
                     fm = db.query(P).filter(P.dni == fdni).first()
                     if not fm:
                         ape_p = fapellidos.split() if fapellidos else ['']
-                        fm = P(
-                            dni=fdni,
-                            nombres=fnombres,
-                            apellido_paterno=ape_p[0] if len(ape_p) > 0 else '',
-                            apellido_materno=ape_p[1] if len(ape_p) > 1 else None,
-                        )
-                        db.add(fm)
-                        db.flush()
-
-                    # Create relationship based on TIPO
-                    origen_id = None
-                    destino_id = None
-                    rel_tipo = None
-
-                    if ftipo == 'MADRE':
-                        origen_id = fm.id
-                        destino_id = persona.id
-                        rel_tipo = 'madre'
-                    elif ftipo == 'PADRE':
-                        origen_id = fm.id
-                        destino_id = persona.id
-                        rel_tipo = 'padre'
-                    elif ftipo == 'HIJA' or ftipo == 'HIJO':
-                        origen_id = persona.id
-                        destino_id = fm.id
-                        rel_tipo = 'padre'
-                    elif ftipo == 'HERMANA' or ftipo == 'HERMANO':
-                        origen_id = persona.id
-                        destino_id = fm.id
-                        rel_tipo = 'hermano'
-                    elif ftipo == 'HIJASTRA' or ftipo == 'HIJASTRO':
-                        origen_id = persona.id
-                        destino_id = fm.id
-                        rel_tipo = 'padre'
-                    elif ftipo == 'CONYUGE' or ftipo == 'ESPOSO' or ftipo == 'ESPOSA':
-                        origen_id = persona.id
-                        destino_id = fm.id
-                        rel_tipo = 'conyuge'
-                    elif ftipo == 'COMPARTEN HIJOS':
-                        origen_id = persona.id
-                        destino_id = fm.id
-                        rel_tipo = 'conyuge'
-
+                        fm = P(dni=fdni, nombres=fnombres, apellido_paterno=ape_p[0] if len(ape_p)>0 else '', apellido_materno=ape_p[1] if len(ape_p)>1 else None)
+                        db.add(fm); db.flush()
+                    origen_id = None; destino_id = None; rel_tipo = None
+                    if ftipo == 'MADRE': origen_id = fm.id; destino_id = persona.id; rel_tipo = 'madre'
+                    elif ftipo == 'PADRE': origen_id = fm.id; destino_id = persona.id; rel_tipo = 'padre'
+                    elif ftipo in ('HIJA','HIJO'): origen_id = persona.id; destino_id = fm.id; rel_tipo = 'padre'
+                    elif ftipo in ('HERMANA','HERMANO'): origen_id = persona.id; destino_id = fm.id; rel_tipo = 'hermano'
+                    elif ftipo in ('HIJASTRA','HIJASTRO'): origen_id = persona.id; destino_id = fm.id; rel_tipo = 'padre'
+                    elif ftipo in ('CONYUGE','ESPOSO','ESPOSA'): origen_id = persona.id; destino_id = fm.id; rel_tipo = 'conyuge'
+                    elif ftipo == 'COMPARTEN HIJOS': origen_id = persona.id; destino_id = fm.id; rel_tipo = 'conyuge'
                     if origen_id and rel_tipo:
                         from models import Relacion as REL
-                        r_existente = db.query(REL).filter(
-                            REL.persona_origen_id == origen_id,
-                            REL.persona_destino_id == destino_id,
-                            REL.tipo_relacion == rel_tipo
-                        ).first()
+                        r_existente = db.query(REL).filter(REL.persona_origen_id == origen_id, REL.persona_destino_id == destino_id, REL.tipo_relacion == rel_tipo).first()
                         if not r_existente:
-                            r = REL(persona_origen_id=origen_id, persona_destino_id=destino_id, tipo_relacion=rel_tipo, certeza='documento')
-                            db.add(r)
+                            db.add(REL(persona_origen_id=origen_id, persona_destino_id=destino_id, tipo_relacion=rel_tipo, certeza='documento'))
                             familiares_creados += 1
-
                 except Exception as e:
-                    errores.append(f"Error procesando familiar DNI {current_block.get('dni', '?')}: {str(e)}")
+                    errores.append(f"Error familiar DNI {current_block.get('dni','?')}: {str(e)}")
 
     db.commit()
 
     mensaje = f"Importado: {persona.nombre_completo}"
-    if trabajo_reg:
-        mensaje += f" - Trabaja en: {trabajo_reg}"
-    if familiares_creados > 0:
-        mensaje += f" - {familiares_creados} familiar(es) vinculado(s)"
-    if errores:
-        mensaje += f" - {len(errores)} error(es)"
+    if trabajo_reg: mensaje += f" - Trabaja en: {trabajo_reg}"
+    if familiares_creados > 0: mensaje += f" - {familiares_creados} familiar(es)"
+    if etiqueta_nombre: mensaje += f" - Etiquetado: {etiqueta_nombre}"
+    if errores: mensaje += f" - {len(errores)} error(es)"
 
-    return SmartImportOut(
-        mensaje=mensaje,
-        persona_dni=persona.dni,
-        familiares_creados=familiares_creados,
-        empresa_registrada=trabajo_reg,
-        errores=errores,
-    )
+    return SmartImportOut(mensaje=mensaje, persona_dni=persona.dni, familiares_creados=familiares_creados, empresa_registrada=trabajo_reg, errores=errores)
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

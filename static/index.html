@@ -275,14 +275,18 @@
         <div class="modal-overlay"></div>
         <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header">
-                <h2>🧠 Importar desde LEDER DATA</h2>
+                <h2>🧠 Importar desde LEDER DATA / Batch RUC 10</h2>
                 <button class="modal-close" data-close="modal-importar-inteligente">&times;</button>
-            </div>
-            <form id="form-importar-inteligente" class="modal-form">
-                <p class="import-info">Pegue aqu&iacute; el texto completo del bot LEDER DATA. El sistema extraer&aacute; autom&aacute;ticamente los datos de la persona, su lugar de trabajo y los familiares, creando las relaciones.</p>
+                </div>
+                <form id="form-importar-inteligente" class="modal-form">
+                <p class="import-info">Soporta dos modos:<br><b>1. LEDER DATA:</b> pegue el reporte individual.<br><b>2. Batch RUC 10:</b> pegue listado tabulado (RUC + nombre) y opcionalmente una etiqueta para todos.</p>
                 <div class="form-group">
-                    <label for="si-textarea">Datos LEDER DATA</label>
-                    <textarea id="si-textarea" class="import-textarea" rows="15" placeholder="Pegue todo el mensaje aqu&iacute;..."></textarea>
+                    <label for="si-etiqueta">🏷 Etiqueta (opcional — se asigna a todas las personas)</label>
+                    <input type="text" id="si-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR 2019-2022" style="font-size:0.9rem;padding:8px;">
+                </div>
+                <div class="form-group">
+                    <label for="si-textarea">Datos</label>
+                    <textarea id="si-textarea" class="import-textarea" rows="15" placeholder="Para batch RUC 10:&#10;10011477432	CORIAT CELIS ENRIQUE&#10;10027726459	JARAMILLO CALLE RICARDO&#10;&#10;O pegue reporte LEDER DATA individual..."></textarea>
                 </div>
                 <div id="si-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;background:var(--color-success-light);border:1px solid #bbf7d0;"></div>
                 <div class="modal-actions">

@@ -295,15 +295,17 @@ document.getElementById("btn-importar-inteligente").addEventListener("click", fu
     document.getElementById("si-resultado").classList.add("hidden");
     om("modal-importar-inteligente");
 });
-
 document.getElementById("form-importar-inteligente").addEventListener("submit", async function(e) {
     e.preventDefault();
     var raw = document.getElementById("si-textarea").value.trim();
     if (!raw) return;
+    var tag = document.getElementById("si-etiqueta").value.trim();
     var btn = document.querySelector("#form-importar-inteligente button[type=submit]");
     btn.disabled = true; btn.textContent = "Procesando...";
     try {
-        var r = await af(A + "/db/importar-inteligente", { method: "POST", body: JSON.stringify({ texto: raw }) });
+        var body = { texto: raw };
+        if (tag) body.etiqueta = tag;
+        var r = await af(A + "/db/importar-inteligente", { method: "POST", body: JSON.stringify(body) });
         var div = document.getElementById("si-resultado");
         div.classList.remove("hidden");
         var msgClass = r.errores && r.errores.length > 0 ? "error" : "success";
