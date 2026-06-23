@@ -138,6 +138,11 @@ class EmpresaCreate(BaseModel):
     comprobantes_autorizados: Optional[str] = None
     sistema_emision: Optional[str] = None
     afiliado_ple: Optional[str] = None
+    sistema_emision_electronica: Optional[str] = None
+    emisor_electronico_desde: Optional[str] = None
+    comprobantes_electronicos: Optional[str] = None
+    padrones: Optional[str] = None
+    establecimientos: Optional[str] = None
     representante_legal_dni: Optional[str] = None
     representante_legal_nombre: Optional[str] = None
     notas: Optional[str] = None
@@ -157,6 +162,11 @@ class EmpresaUpdate(BaseModel):
     comprobantes_autorizados: Optional[str] = None
     sistema_emision: Optional[str] = None
     afiliado_ple: Optional[str] = None
+    sistema_emision_electronica: Optional[str] = None
+    emisor_electronico_desde: Optional[str] = None
+    comprobantes_electronicos: Optional[str] = None
+    padrones: Optional[str] = None
+    establecimientos: Optional[str] = None
     representante_legal_dni: Optional[str] = None
     representante_legal_nombre: Optional[str] = None
     notas: Optional[str] = None
@@ -178,6 +188,11 @@ class EmpresaOut(BaseModel):
     comprobantes_autorizados: Optional[str] = None
     sistema_emision: Optional[str] = None
     afiliado_ple: Optional[str] = None
+    sistema_emision_electronica: Optional[str] = None
+    emisor_electronico_desde: Optional[str] = None
+    comprobantes_electronicos: Optional[str] = None
+    padrones: Optional[str] = None
+    establecimientos: Optional[str] = None
     representante_legal_dni: Optional[str] = None
     representante_legal_nombre: Optional[str] = None
     notas: Optional[str] = None
@@ -281,6 +296,19 @@ class SmartImportOut(BaseModel):
     empresa_registrada: Optional[str] = None
     empresas_creadas: int = 0
     personas_creadas: int = 0
+    etiquetados: int = 0
+    errores: List[str] = []
+
+
+# ─── Empresa Smart Import (SUNAT macro 21 columnas) ─────────────────────────
+class EmpresaImportOut(BaseModel):
+    mensaje: str
+    total_procesadas: int = 0
+    empresas_creadas: int = 0
+    empresas_actualizadas: int = 0
+    personas_creadas: int = 0
+    vinculos_creados: int = 0
+    representantes_vinculados: int = 0
     etiquetados: int = 0
     errores: List[str] = []
 

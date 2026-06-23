@@ -662,6 +662,55 @@ document.getElementById("form-importar-inteligente").addEventListener("submit", 
     btn.disabled = false; btn.textContent = "Importar Inteligentemente";
 });
 
+/* ─── Empresa Import (SUNAT macro 21 columnas) ─── */
+document.getElementById("btn-importar-empresas").addEventListener("click", function() {
+    document.getElementById("form-importar-empresas").reset();
+    document.getElementById("ie-resultado").classList.add("hidden");
+    om("modal-importar-empresas");
+});
+
+document.getElementById("form-importar-empresas").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    var raw = document.getElementById("ie-textarea").value.trim();
+    if (!raw) return;
+    var tag = document.getElementById("ie-etiqueta").value.trim();
+    var btn = document.querySelector("#form-importar-empresas button[type=submit]");
+    btn.disabled = true; btn.textContent = "Importando...";
+    try {
+        var body = { texto: raw };
+        if (tag) body.etiqueta = tag;
+        var r = await af(A + "/empresas/importar-inteligente", { method: "POST", body: JSON.stringify(body) });
+        var div = document.getElementById("ie-resultado");
+        div.classList.remove("hidden");
+        var hasError = r.errores && r.errores.length > 0;
+        div.style.background = hasError ? "#fef2f2" : "#f0fdf4";
+        div.style.border = hasError ? "1px solid #fca5a5" : "1px solid #bbf7d0";
+        var html = "<strong>" + r.mensaje + "</strong>";
+        if (r.total_procesadas > 0) {
+            html += '<div style="margin-top:8px;font-size:0.85rem;display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
+            html += '<span>📦 Procesadas: ' + r.total_procesadas + '</span>';
+            html += '<span>🏢 Creadas: ' + r.empresas_creadas + '</span>';
+            html += '<span>🔄 Actualizadas: ' + r.empresas_actualizadas + '</span>';
+            html += '<span>👤 Personas: ' + r.personas_creadas + '</span>';
+            html += '<span>🔗 Vínculos: ' + r.vinculos_creados + '</span>';
+            html += '<span>⚖️ Rep. Legales: ' + r.representantes_vinculados + '</span>';
+            html += '<span>🏷 Etiquetados: ' + r.etiquetados + '</span>';
+            html += '</div>';
+        }
+        if (r.errores && r.errores.length > 0) {
+            html += '<div style="margin-top:8px;font-size:0.8rem;color:#dc2626;max-height:100px;overflow-y:auto;">';
+            r.errores.slice(0, 5).forEach(function(err) {
+                html += '<div>⚠ ' + es(err) + '</div>';
+            });
+            if (r.errores.length > 5) html += '<div>... y ' + (r.errores.length - 5) + ' más</div>';
+            html += '</div>';
+        }
+        div.innerHTML = html;
+        st(r.mensaje, hasError ? "error" : "success");
+    } catch (err) { st(err.message, "error"); }
+    btn.disabled = false; btn.textContent = "Importar Empresas";
+});
+
 /* ─── Dashboard ─── */
 document.getElementById("btn-dashboard").addEventListener("click", function() { cargarDashboard(); });
 async function cargarDashboard() {

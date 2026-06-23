@@ -44,6 +44,7 @@
                 <button id="btn-visorempresas" class="btn btn-outline btn-sm">🏢 Empresas</button>
                 <button id="btn-importar" class="btn btn-outline btn-sm">📥 Importar</button>
                 <button id="btn-importar-inteligente" class="btn btn-primary btn-sm">🧠 Importar</button>
+                <button id="btn-importar-empresas" class="btn btn-outline btn-sm">📥 + Empresas SUNAT</button>
                 <button id="btn-reset" class="btn btn-danger btn-sm" style="background:#dc2626;color:#fff;border:none;">🗑 Reset</button>
                 <button id="btn-dashboard" class="btn btn-primary btn-sm">📊 Dashboard</button>
             </nav>
@@ -438,6 +439,38 @@
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" data-close="modal-importar-inteligente">Cerrar</button>
                     <button type="submit" class="btn btn-primary">Importar Inteligentemente</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: IMPORTAR EMPRESAS SUNAT (21 columnas) ═══ -->
+    <div id="modal-importar-empresas" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>📥 Importar Empresas (SUNAT)</h2>
+                <button class="modal-close" data-close="modal-importar-empresas">&times;</button>
+            </div>
+            <form id="form-importar-empresas" class="modal-form">
+                <p class="import-info">
+                    Pegue los datos extraídos con la macro SUNAT (formato tabulado de 21 columnas).
+                    Soporta <b>RUC 10</b> (personas naturales, crea persona + empresa + vinculo),
+                    <b>RUC 20/30</b> (empresas jurídicas) y <b>representantes legales</b>.
+                </p>
+                <div class="form-group">
+                    <label for="ie-etiqueta">🏷 Etiqueta (opcional)</label>
+                    <input type="text" id="ie-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR MUNICIPALIDAD 2024" style="font-size:0.9rem;padding:8px;">
+                </div>
+                <div class="form-group">
+                    <label for="ie-textarea">Datos SUNAT (tabulados)</label>
+                    <textarea id="ie-textarea" class="import-textarea" rows="15" placeholder="INGRESAR EL NUMERO DE RUC	Número de RUC:	Tipo Contribuyente:	Nombre Comercial:	...
+10027726459	10027726459 - JARAMILLO CALLE RICARDO MERCEDES	PERSONA NATURAL SIN NEGOCIO...</textarea>
+                </div>
+                <div id="ie-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-importar-empresas">Cerrar</button>
+                    <button type="submit" class="btn btn-primary">Importar Empresas</button>
                 </div>
             </form>
         </div>

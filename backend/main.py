@@ -50,7 +50,7 @@ from schemas import (
     FichaPersonaOut, BusquedaPersonaOut,
     ArbolOut, ArbolNodo,
     LoginRequest, TokenResponse, UsuarioOut,
-    AuditoriaOut, AuditoriaLista, SmartImportOut,
+    AuditoriaOut, AuditoriaLista, SmartImportOut, EmpresaImportOut,
     EmpresaCreate, EmpresaUpdate, EmpresaOut, EmpresaBrief,
     PersonaEmpresaCreate, PersonaEmpresaOut,
     PersonaEmpresaPersonaOut, PersonaEmpresaEmpresaOut,
@@ -589,12 +589,321 @@ def _ejecutar_enriquecimiento(user_id: int, user_username: str):
         registrar_auditoria(db, user_id, user_username, "UPDATE", "Empresa", "TODAS",
                            {"accion": "enriquecer_todas_sunat", "procesadas": a, "errores": e})
     except Exception as ex:
-        db.rollback()
+        try:
+            db.rollback()
+        except Exception:
+            pass
         _progreso_enriquecer["activo"] = False
         _progreso_enriquecer["mensaje"] = f"Error general: {ex}"
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EMPRESA SMART IMPORT (SUNAT macro 21 columnas)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SUNAT_COLUMNAS = [
+    "ruc_raw", "ruc_nombre", "tipo_contribuyente", "nombre_comercial",
+    "fecha_inscripcion", "fecha_inicio_actividades", "estado", "condicion",
+    "domicilio_fiscal", "sistema_emision", "actividad_comercio_exterior",
+    "sistema_contabilidad", "actividad_economica", "comprobantes_autorizados",
+    "sistema_emision_electronica", "emisor_electronico_desde",
+    "comprobantes_electronicos", "afiliado_ple", "padrones",
+    "representantes_legales", "establecimientos",
+]
+
+
+def _parsear_nombre_apellidos_ruc10(texto: str):
+    """Parsea el campo 'Número de RUC:' de un RUC 10.
+    Formato: 'RUC - APELLIDO1 APELLIDO2 NOMBRES...'
+    Retorna (nombres, apellido_paterno, apellido_materno)
+    """
+    if " - " in texto:
+        texto = texto.split(" - ", 1)[1].strip()
+    partes = texto.split()
+    if len(partes) >= 3:
+        ap_p = partes[0]
+        ap_m = partes[1]
+        nom = " ".join(partes[2:])
+        return nom, ap_p, ap_m
+    elif len(partes) == 2:
+        return "", partes[0], partes[1]
+    elif len(partes) == 1:
+        return "", partes[0], None
+    return "", "", None
+
+
+def _parsear_representante_legal(texto: str):
+    """Parsea el campo 'Representates legales'.
+    Formato: 'NOMBRE APELLIDOS - CARGO'
+    o 'No se encontraron representantes legales'
+    Retorna (nombre_completo, cargo) o None.
+    """
+    texto = texto.strip()
+    if not texto or texto.lower().startswith("no se encontr"):
+        return None, None
+    if " - " in texto:
+        nombre, cargo = texto.split(" - ", 1)
+        return nombre.strip(), cargo.strip()
+    # Sin separador, probablemente solo nombre
+    return texto, "representante legal"
+
+
+@app.post("/api/empresas/importar-inteligente", response_model=EmpresaImportOut, status_code=status.HTTP_201_CREATED)
+def api_importar_empresas_inteligente(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Importa datos de empresas desde el formato tabulado de la macro SUNAT (21 columnas).
+
+    Soporta:
+    - RUC 20/30: crea/actualiza Empresa con todos los campos SUNAT
+    - RUC 10: crea Persona + Empresa RUC10 + vinculo automatico
+    - Representante legal: parsea y vincula como 'representante legal'
+    - Etiqueta opcional: asigna a todas las entidades creadas
+    """
+    raw = body.get("texto", "")
+    etiqueta_nombre = body.get("etiqueta", "").strip()
+
+    lineas = [l.strip() for l in raw.strip().split("\n") if l.strip()]
+    if not lineas:
+        raise HTTPException(status_code=400, detail="No hay datos para importar")
+
+    # Detectar si tiene cabecera de columnas SUNAT
+    tiene_header = "INGRESAR EL NUMERO DE RUC" in lineas[0].upper()
+    inicio = 1 if tiene_header else 0
+
+    result = EmpresaImportOut(mensaje="", total_procesadas=0)
+
+    # Preparar etiqueta si se especifico
+    etiqueta_id = None
+    if etiqueta_nombre:
+        e_existente = db.query(Etiqueta).filter(Etiqueta.nombre == etiqueta_nombre).first()
+        if not e_existente:
+            e_existente = Etiqueta(nombre=etiqueta_nombre)
+            db.add(e_existente)
+            db.flush()
+        etiqueta_id = e_existente.id
+
+    for i in range(inicio, len(lineas)):
+        partes = lineas[i].split("\t")
+        if len(partes) < 2:
+            continue
+
+        ruc = partes[0].strip()
+        if len(ruc) != 11 or not ruc.isdigit():
+            result.errores.append(f"Línea {i+1}: RUC inválido '{ruc}'")
+            continue
+
+        result.total_procesadas += 1
+        tipo_ruc = ruc[0]
+
+        try:
+            if tipo_ruc == "1":
+                # ── RUC 10: Persona Natural con Negocio ──
+                dni = ruc[2:10]  # 8 dígitos
+                # Extraer nombre del campo 'Número de RUC:'
+                nombre_texto = partes[1].strip() if len(partes) > 1 else ""
+                nom, ap_p, ap_m = _parsear_nombre_apellidos_ruc10(nombre_texto)
+
+                # Buscar o crear persona
+                persona = db.query(Persona).filter(Persona.dni == dni).first()
+                if not persona:
+                    persona = Persona(
+                        dni=dni,
+                        nombres=nom or "PENDIENTE",
+                        apellido_paterno=ap_p or "PENDIENTE",
+                        apellido_materno=ap_m,
+                    )
+                    db.add(persona)
+                    db.flush()
+                    result.personas_creadas += 1
+                    if etiqueta_id:
+                        db.add(PersonaEtiqueta(persona_id=persona.id, etiqueta_id=etiqueta_id))
+                        result.etiquetados += 1
+
+                # Buscar o crear empresa RUC 10
+                empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
+                if empresa:
+                    result.empresas_actualizadas += 1
+                else:
+                    empresa = Empresa(ruc=ruc, nombre=persona.nombre_completo)
+                    db.add(empresa)
+                    db.flush()
+                    result.empresas_creadas += 1
+                    if etiqueta_id:
+                        db.add(EmpresaEtiqueta(empresa_id=empresa.id, etiqueta_id=etiqueta_id))
+                        result.etiquetados += 1
+
+                # Vincular persona -> empresa si no existe ya
+                vinculo_existente = db.query(PersonaEmpresa).filter(
+                    PersonaEmpresa.persona_id == persona.id,
+                    PersonaEmpresa.empresa_id == empresa.id,
+                ).first()
+                if not vinculo_existente:
+                    db.add(PersonaEmpresa(
+                        persona_id=persona.id,
+                        empresa_id=empresa.id,
+                        cargo="titular - persona natural con negocio",
+                    ))
+                    result.vinculos_creados += 1
+
+                # Llenar datos SUNAT desde las columnas
+                _aplicar_campos_sunat(empresa, partes)
+
+            elif tipo_ruc in ("2", "3"):
+                # ── RUC 20/30: Empresa Juridica ──
+                # Extraer nombre del campo 'Número de RUC:'
+                nombre_empresa = ""
+                if len(partes) > 1:
+                    txt = partes[1].strip()
+                    if " - " in txt:
+                        nombre_empresa = txt.split(" - ", 1)[1].strip()
+                    else:
+                        nombre_empresa = txt
+
+                empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
+                if empresa:
+                    result.empresas_actualizadas += 1
+                else:
+                    empresa = Empresa(ruc=ruc, nombre=nombre_empresa or f"EMPRESA {ruc}")
+                    db.add(empresa)
+                    db.flush()
+                    result.empresas_creadas += 1
+                    if etiqueta_id:
+                        db.add(EmpresaEtiqueta(empresa_id=empresa.id, etiqueta_id=etiqueta_id))
+                        result.etiquetados += 1
+
+                _aplicar_campos_sunat(empresa, partes)
+
+                # Procesar representante legal
+                if len(partes) > 19:
+                    rep_texto = partes[19].strip()
+                    rep_nombre, rep_cargo = _parsear_representante_legal(rep_texto)
+                    if rep_nombre:
+                        empresa.representante_legal_nombre = rep_nombre
+                        empresa.representante_legal_dni = ""
+
+                        # Buscar persona por nombre (aproximado)
+                        rep_persona = None
+                        if rep_nombre:
+                            rep_like = db.query(Persona).filter(
+                                Persona.activo == True,
+                                Persona.nombres.ilike(f"%{rep_nombre.split()[-1]}%")
+                            ).first()
+                            rep_persona = rep_like
+
+                        if not rep_persona:
+                            # Crear persona con datos pendientes
+                            nombre_partes = rep_nombre.split()
+                            if len(nombre_partes) >= 2:
+                                rep_nom = " ".join(nombre_partes[:-2]) if len(nombre_partes) > 2 else nombre_partes[0]
+                                rep_ap = nombre_partes[-2] if len(nombre_partes) >= 2 else ""
+                                rep_am = nombre_partes[-1] if len(nombre_partes) >= 2 else None
+                            else:
+                                rep_nom = rep_nombre
+                                rep_ap = "PENDIENTE"
+                                rep_am = None
+
+                            rep_persona = Persona(
+                                dni=f"REP-{ruc}",
+                                nombres=rep_nom or "PENDIENTE",
+                                apellido_paterno=rep_ap or "PENDIENTE",
+                                apellido_materno=rep_am,
+                            )
+                            db.add(rep_persona)
+                            db.flush()
+                            result.personas_creadas += 1
+                            if etiqueta_id:
+                                db.add(PersonaEtiqueta(persona_id=rep_persona.id, etiqueta_id=etiqueta_id))
+                                result.etiquetados += 1
+
+                        cargo_real = rep_cargo or "representante legal"
+                        vinculo_rep = db.query(PersonaEmpresa).filter(
+                            PersonaEmpresa.persona_id == rep_persona.id,
+                            PersonaEmpresa.empresa_id == empresa.id,
+                            PersonaEmpresa.cargo == cargo_real,
+                        ).first()
+                        if not vinculo_rep:
+                            db.add(PersonaEmpresa(
+                                persona_id=rep_persona.id,
+                                empresa_id=empresa.id,
+                                cargo=cargo_real,
+                            ))
+                            result.representantes_vinculados += 1
+                            result.vinculos_creados += 1
+
+            else:
+                result.errores.append(f"RUC {ruc}: tipo no soportado ({tipo_ruc})")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            result.errores.append(f"RUC {ruc}: {str(e)[:100]}")
+
+    db.commit()
+
+    partes_msg = []
+    if result.empresas_creadas > 0:
+        partes_msg.append(f"{result.empresas_creadas} empresa(s) creada(s)")
+    if result.empresas_actualizadas > 0:
+        partes_msg.append(f"{result.empresas_actualizadas} actualizada(s)")
+    if result.personas_creadas > 0:
+        partes_msg.append(f"{result.personas_creadas} persona(s) creada(s)")
+    if result.vinculos_creados > 0:
+        partes_msg.append(f"{result.vinculos_creados} vinculo(s)")
+    if result.representantes_vinculados > 0:
+        partes_msg.append(f"{result.representantes_vinculados} rep. legal(es)")
+    if result.etiquetados > 0:
+        partes_msg.append(f"{result.etiquetados} etiquetado(s)")
+
+    if not partes_msg:
+        partes_msg.append("Todo ya existia en BD")
+
+    errores_str = f" ({len(result.errores)} error(es))" if result.errores else ""
+    result.mensaje = f"Importacion completada: {', '.join(partes_msg)}{errores_str}"
+
+    return result
+
+
+def _aplicar_campos_sunat(empresa, partes):
+    """Aplica los campos SUNAT desde las columnas tabuladas al modelo Empresa.
+
+    Mapeo por indice:
+    0=ruc, 1=nombre, 2=tipo_contribuyente, 3=nombre_comercial,
+    4=fecha_inscripcion, 5=fecha_inicio, 6=estado, 7=condicion,
+    8=direccion, 9=sistema_emision, 10=act_comercio_ext,
+    11=sistema_contabilidad, 12=actividad_economica,
+    13=comprobantes_autorizados, 14=sistema_emision_electronica,
+    15=emisor_electronico_desde, 16=comprobantes_electronicos,
+    17=afiliado_ple, 18=padrones, 19=representantes, 20=establecimientos
+    """
+    def v(idx):
+        return partes[idx].strip() if len(partes) > idx and partes[idx].strip() else None
+
+    if v(2): empresa.tipo_contribuyente = v(2)
+    if v(3): empresa.nombre_comercial = v(3)
+    if v(4): empresa.fecha_inscripcion = v(4)
+    if v(5): empresa.fecha_inicio_actividades = v(5)
+    if v(6): empresa.estado = v(6)
+    if v(7): empresa.condicion = v(7)
+    if v(8): empresa.direccion = v(8)
+    if v(9): empresa.sistema_emision = v(9)
+    if v(10): empresa.actividad_comercio_exterior = v(10)
+    if v(11): empresa.sistema_contabilidad = v(11)
+    if v(12): empresa.actividad_economica = v(12)
+    if v(13): empresa.comprobantes_autorizados = v(13)
+    if v(14): empresa.sistema_emision_electronica = v(14)
+    if v(15): empresa.emisor_electronico_desde = v(15)
+    if v(16): empresa.comprobantes_electronicos = v(16)
+    if v(17): empresa.afiliado_ple = v(17)
+    if v(18): empresa.padrones = v(18)
+    if v(20): empresa.establecimientos = v(20)
 
 
 @app.post("/api/persona-empresa", status_code=status.HTTP_201_CREATED)

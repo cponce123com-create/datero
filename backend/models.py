@@ -234,6 +234,28 @@ class Empresa(Base):
     sistema_emision = Column(String(100), nullable=True)
     afiliado_ple = Column(String(5), nullable=True, comment="SI/NO")
 
+    # ── Datos SUNAT extendidos ──────────────────────────────────────────
+    sistema_emision_electronica = Column(
+        Text, nullable=True,
+        comment="Sistema de Emisión Electrónica (FACTURA PORTAL, BOLETA PORTAL, etc.)"
+    )
+    emisor_electronico_desde = Column(
+        String(20), nullable=True,
+        comment="Fecha desde que es emisor electrónico"
+    )
+    comprobantes_electronicos = Column(
+        Text, nullable=True,
+        comment="Comprobantes Electrónicos habilitados"
+    )
+    padrones = Column(
+        Text, nullable=True,
+        comment="Padrones a los que pertenece (NINGUNO, etc.)"
+    )
+    establecimientos = Column(
+        Text, nullable=True,
+        comment="Información de establecimientos anexos"
+    )
+
     # ── Representante Legal ────────────────────────────────────────────
     representante_legal_dni = Column(
         String(20), nullable=True, index=True,

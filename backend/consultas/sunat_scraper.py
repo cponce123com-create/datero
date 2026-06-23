@@ -134,25 +134,56 @@ class SunatScraper:
     def _consultar(self, ruc: str) -> dict:
         """Ejecuta el flujo completo de consulta.
 
-        Basado en el patrón de la macro VBA de Excel que scrapa SUNAT:
-        GET con accion=consPorRuc&actReturn=1&modo=1&nroRuc={ruc}
+        Basado en el patrón de la macro VBA de Excel.
+        La macro usa WinHttp.WinHttpRequest.5.1 que es similar a
+        requests.Session(). Los parámetros se envían via POST.
         """
         # Obtener sesión inicial (cookies F5/Cloudflare)
         try:
-            self._session.get(BASE_URL + "/", timeout=TIMEOUT)
+            resp_init = self._session.get(BASE_URL + "/", timeout=TIMEOUT)
+            # Extraer el token/nonce si existe
+            html_init = resp_init.text
         except requests.exceptions.RequestException:
-            pass  # La página inicial puede fallar, las cookies persisten
+            html_init = ""
 
-        # Consultar RUC via GET (patrón VBA)
+        # Detectar si SUNAT nos bloquea con challenge
+        if self._es_captcha(html_init):
+            # Intentar igual el POST, a veces funciona
+            pass
+
+        # Extraer token del formulario (si existe)
+        token = ""
+        match = re.search(
+            r'''name=["']token["'][^>]*value=["']([^"']*)["']''',
+            html_init
+        )
+        if match:
+            token = match.group(1)
+
+        # Extraer contexto
+        contexto = "ti-it"
+        match = re.search(
+            r'''name=["']contexto["'][^>]*value=["']([^"']*)["']''',
+            html_init
+        )
+        if match:
+            contexto = match.group(1)
+
+        # Consultar RUC via POST (como lo haría el formulario HTML)
+        data = {
+            "accion": "consPorRuc",
+            "actReturn": "1",
+            "modo": "1",
+            "nroRuc": ruc,
+            "contexto": contexto,
+        }
+        if token:
+            data["token"] = token
+
         try:
-            resp = self._session.get(
+            resp = self._session.post(
                 CONSULTA_URL,
-                params={
-                    "accion": "consPorRuc",
-                    "actReturn": "1",
-                    "modo": "1",
-                    "nroRuc": ruc,
-                },
+                data=data,
                 timeout=TIMEOUT,
             )
             resp.raise_for_status()
@@ -166,13 +197,9 @@ class SunatScraper:
             raise CaptchaDetectedError("SUNAT requiere CAPTCHA")
 
         if size < 500:
-            raise SunatScraperError(
-                f"Respuesta vacía de SUNAT ({size} bytes)"
-            )
+            raise SunatScraperError(f"Respuesta vacía de SUNAT ({size} bytes)")
 
-        # Verificar que el HTML contenga datos (no solo el formulario vacío)
-        # El formulario vacío tiene ~22835 bytes
-        # Los datos reales agregan ~5000+ bytes con tablas
+        # Detectar si la respuesta es la página de error o el formulario
         if "No se encontraron resultados" in html:
             raise SunatScraperError(f"No se encontraron datos para el RUC {ruc}")
 
