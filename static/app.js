@@ -565,8 +565,7 @@ document.getElementById("form-importar").addEventListener("submit", async functi
     e.preventDefault();
     var raw = document.getElementById("csv-textarea").value.trim();
     if (!raw) return;
-    var lines = raw.split("
-");
+    var lines = raw.split("\n");
     var ps = [];
     for (var i = 0; i < lines.length; i++) { var ln = lines[i].trim(); if (!ln) continue; var p = ln.split(","); if (p.length < 3) continue; ps.push({ dni: (p[0]||"").trim(), nombres: (p[1]||"").trim(), apellido_paterno: (p[2]||"").trim(), apellido_materno: (p[3]||"").trim()||null, fecha_nacimiento: null, foto_url: null, notas: null }); }
     if (ps.length === 0) { st("No hay datos CSV validos", "error"); return; }
