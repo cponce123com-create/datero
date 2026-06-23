@@ -687,6 +687,102 @@ body {
     overflow-y: auto;
 }
 
+/* ─── Login Overlay ────────────────────────────────────────────────────────── */
+.login-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+
+.login-overlay.hidden { display: none; }
+
+.login-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: 40px 36px;
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
+}
+
+.login-card h2 {
+    font-size: 1.5rem;
+    margin-bottom: 6px;
+}
+
+.login-card > p {
+    color: var(--color-text-secondary);
+    margin-bottom: 24px;
+    font-size: 0.92rem;
+}
+
+.login-card .form-group {
+    text-align: left;
+}
+
+/* ─── DB Table ─────────────────────────────────────────────────────────────── */
+.db-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.db-table th,
+.db-table td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.db-table th {
+    background: var(--color-bg);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    position: sticky;
+    top: 0;
+}
+
+.db-table tr:nth-child(even) td {
+    background: var(--color-bg);
+}
+
+.db-table tr:hover td {
+    background: var(--color-primary-light);
+}
+
+/* ─── Import Textarea ──────────────────────────────────────────────────────── */
+.import-textarea {
+    width: 100%;
+    padding: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    background: var(--color-bg);
+    resize: vertical;
+}
+
+.import-textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+}
+
+/* ─── Import Info ──────────────────────────────────────────────────────────── */
+.import-info {
+    color: var(--color-text-secondary);
+    font-size: 0.82rem;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
 /* ─── Etiquetas list in modal ──────────────────────────────────────────────── */
 .etiqueta-list-item {
     display: flex;

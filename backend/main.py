@@ -487,6 +487,68 @@ def api_desasignar_etiqueta(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# VISOR DE BASE DE DATOS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/db/todas", response_model=List[PersonaOut])
+def api_db_todas(
+    db: Session = Depends(get_db),
+    user: str = Depends(autenticar),
+):
+    """
+    Retorna TODAS las personas activas en la base de datos.
+    Útil para el visor de datos y exportación.
+    """
+    from models import Persona as P
+    return db.query(P).filter(P.activo == True).order_by(P.apellido_paterno, P.nombres).all()
+
+
+@app.post("/api/db/importar", status_code=status.HTTP_201_CREATED)
+def api_db_importar(
+    personas: List[PersonaCreate],
+    db: Session = Depends(get_db),
+    user: str = Depends(autenticar),
+):
+    """
+    Importa múltiples personas de una sola vez (batch).
+    Recibe una lista de objetos PersonaCreate.
+    Retorna conteo de creados y errores.
+    """
+    creados = 0
+    errores = []
+
+    for datos in personas:
+        try:
+            from models import Persona as P
+            existente = db.query(P).filter(P.dni == datos.dni).first()
+            if existente:
+                errores.append(f"DNI {datos.dni}: ya existe")
+                continue
+
+            persona = P(
+                dni=datos.dni,
+                nombres=datos.nombres,
+                apellido_paterno=datos.apellido_paterno,
+                apellido_materno=datos.apellido_materno,
+                fecha_nacimiento=datos.fecha_nacimiento,
+                foto_url=datos.foto_url,
+                notas=datos.notas,
+            )
+            db.add(persona)
+            creados += 1
+        except Exception as e:
+            errores.append(f"DNI {datos.dni}: {str(e)}")
+
+    db.commit()
+
+    return {
+        "mensaje": f"Importación completada: {creados} creados, {len(errores)} errores",
+        "creados": creados,
+        "errores": errores,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # HEALTH CHECK
 # ═══════════════════════════════════════════════════════════════════════════════
 
