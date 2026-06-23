@@ -452,8 +452,7 @@ def _batch_import(texto, db, user):
             etiqueta_id = e_existente.id
 
         # ── PARSEAR TODAS LAS LÍNEAS ────────────────────────────────────────
-        personas_nuevas = []  # (dni, nombres, ap_paterno, ap_materno)
-        dnis_a_crear = set()
+        personas_por_dni = {}  # dni -> (nombres, ap_paterno, ap_materno)
         for line in raw.strip().split("\n"):
             line = line.strip()
             if not line: continue
@@ -478,15 +477,14 @@ def _batch_import(texto, db, user):
                 ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = ""
             else:
                 ap_p = nombre_parts[0] if nombre_parts else ""; ap_m = None; nom = ""
-            personas_nuevas.append((dni, nom, ap_p, ap_m))
-            dnis_a_crear.add(dni)
+            personas_por_dni[dni] = (nom, ap_p, ap_m)  # deduplicado por DNI
 
-        if not personas_nuevas:
+        if not personas_por_dni:
             return SmartImportOut(mensaje="No se encontraron datos validos", persona_dni=None, errores=errores)
 
         # ── CONSULTAR EXISTENTES EN UNA SOLA QUERY ──────────────────────────
         dnis_existentes = set(
-            row[0] for row in db.query(Persona.dni).filter(Persona.dni.in_(list(dnis_a_crear))).all()
+            row[0] for row in db.query(Persona.dni).filter(Persona.dni.in_(list(personas_por_dni.keys()))).all()
         )
         dnis_existentes_etiqueta = set()
         if etiqueta_id and dnis_existentes:
@@ -500,7 +498,7 @@ def _batch_import(texto, db, user):
         objects_to_add = []
         persona_dni_id_map = {}  # dni -> id after flush
         creados = 0
-        for dni, nom, ap_p, ap_m in personas_nuevas:
+        for dni, (nom, ap_p, ap_m) in personas_por_dni.items():
             if dni not in dnis_existentes:
                 p = Persona(dni=dni, nombres=nom, apellido_paterno=ap_p, apellido_materno=ap_m)
                 objects_to_add.append(p)
@@ -516,7 +514,7 @@ def _batch_import(texto, db, user):
         tag_objects = []
         tags_asignados = 0
         if etiqueta_id:
-            for dni, nom, ap_p, ap_m in personas_nuevas:
+            for dni, (nom, ap_p, ap_m) in personas_por_dni.items():
                 pid = persona_dni_id_map.get(dni)
                 if not pid:
                     if dni in dnis_existentes and dni not in dnis_existentes_etiqueta:
