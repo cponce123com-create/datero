@@ -150,12 +150,36 @@ class ArbolOut(BaseModel):
 
 # ─── Ficha completa ───────────────────────────────────────────────────────────
 
+# ─── Trabajo ──────────────────────────────────────────────────────────────────
+
+class TrabajoOut(BaseModel):
+    """Lugar de trabajo de una persona."""
+    id: int
+    empresa_nombre: str
+
+    model_config = {"from_attributes": True}
+
+
+# ─── Smart Import ─────────────────────────────────────────────────────────────
+
+class SmartImportOut(BaseModel):
+    """Resultado de la importación inteligente."""
+    mensaje: str
+    persona_dni: Optional[str] = None
+    familiares_creados: int = 0
+    empresa_registrada: Optional[str] = None
+    errores: List[str] = []
+
+
+# ─── Ficha completa ───────────────────────────────────────────────────────────
+
 class FichaPersonaOut(BaseModel):
-    """Ficha completa de una persona: datos, relaciones, parentescos y etiquetas."""
+    """Ficha completa de una persona: datos, relaciones, parentescos, etiquetas y trabajos."""
     persona: PersonaOut
     relaciones_directas: List[RelacionOut]
     parentescos_inferidos: List[ParentescoOut]
     etiquetas: List[PersonaEtiquetaOut]
+    trabajos: List[TrabajoOut] = []
 
 
 # ─── Búsqueda ─────────────────────────────────────────────────────────────────

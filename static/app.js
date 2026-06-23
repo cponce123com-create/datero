@@ -104,6 +104,13 @@ function rf(d) {
     if (d.parentescos_inferidos.length === 0) { h += '<p style="color:var(--color-text-secondary);font-size:0.9rem;">No se encontraron parentescos inferidos.</p>'; }
     else { h += '<div class="parentesco-list">'; d.parentescos_inferidos.forEach(function(inf) { h += '<div class="parentesco-card"><div class="parentesco-header"><span class="parentesco-badge">inferido</span><span class="parentesco-tipo">' + es(inf.tipo_parentesco) + ':</span><span class="parentesco-nombre" data-dni="' + es(inf.persona.dni) + '">' + es(inf.persona.nombre_completo) + '</span></div><div class="parentesco-camino">' + es(inf.camino) + '</div></div>'; }); h += '</div>'; }
     h += '</div>';
+    h += '<div class="section"><div class="section-title">🏢 Lugares de Trabajo <span class="section-badge">' + (d.trabajos ? d.trabajos.length : 0) + '</span></div>';
+    if (d.trabajos && d.trabajos.length > 0) {
+        h += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+        d.trabajos.forEach(function(t) { h += '<div class="tag-item"><span class="tag-nombre">' + es(t.empresa_nombre) + '</span></div>'; });
+        h += '</div>';
+    } else { h += '<p style="color:var(--color-text-secondary);font-size:0.9rem;">Sin trabajos registrados.</p>'; }
+    h += '</div>';
     h += '<div class="section"><div class="section-title">🏷 Etiquetas <span class="section-badge">' + d.etiquetas.length + '</span></div><div class="tags-list">';
     d.etiquetas.forEach(function(et) { h += '<div class="tag-item"><span class="tag-nombre">' + es(et.etiqueta.nombre) + '</span>'; if (et.observacion) h += '<span class="tag-obs" title="' + es(et.observacion) + '">' + es(et.observacion) + '</span>'; h += '<button class="tag-remove" data-etiqueta="' + es(et.etiqueta.nombre) + '" title="Quitar">✕</button></div>'; });
     h += '<button class="tag-add-btn" data-dni="' + es(p.dni) + '">+ Agregar etiqueta</button></div></div>';
@@ -188,6 +195,35 @@ document.getElementById("form-importar").addEventListener("submit", async functi
         cm("modal-importar"); document.getElementById("csv-textarea").value = "";
     } catch (err) { st(err.message, "error"); }
     ob.disabled = false; ob.textContent = "Importar";
+});
+
+/* Smart Import (LEDER DATA) */
+document.getElementById("btn-importar-inteligente").addEventListener("click", function() {
+    document.getElementById("form-importar-inteligente").reset();
+    document.getElementById("si-resultado").classList.add("hidden");
+    om("modal-importar-inteligente");
+});
+
+document.getElementById("form-importar-inteligente").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    var raw = document.getElementById("si-textarea").value.trim();
+    if (!raw) return;
+    var btn = document.querySelector("#form-importar-inteligente button[type=submit]");
+    btn.disabled = true; btn.textContent = "Procesando...";
+    try {
+        var r = await af(A + "/db/importar-inteligente", { method: "POST", body: JSON.stringify({ texto: raw }) });
+        var div = document.getElementById("si-resultado");
+        div.classList.remove("hidden");
+        var msgClass = r.errores && r.errores.length > 0 ? "error" : "success";
+        div.style.background = msgClass === "error" ? "var(--color-danger-light)" : "var(--color-success-light)";
+        div.style.borderColor = msgClass === "error" ? "#fca5a5" : "#bbf7d0";
+        div.innerHTML = "<strong>" + r.mensaje + "</strong>";
+        if (r.errores && r.errores.length > 0) {
+            div.innerHTML += "<br><small style=\"color:var(--color-danger);\">Errores: " + r.errores.slice(0,3).join(", ") + "</small>";
+        }
+        div.innerHTML += "<br><button class=\"btn btn-outline btn-xs\" style=\"margin-top:8px;\" onclick=\"cm('modal-importar-inteligente'); cf('" + r.persona_dni + "')\">Ver ficha de " + r.persona_dni + "</button>";
+    } catch (err) { st(err.message, "error"); }
+    btn.disabled = false; btn.textContent = "Importar Inteligentemente";
 });
 
 /* Init */

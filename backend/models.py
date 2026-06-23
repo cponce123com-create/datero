@@ -60,6 +60,12 @@ class Persona(Base):
         back_populates="persona",
         lazy="selectin",
     )
+    # Lugares de trabajo
+    trabajos = relationship(
+        "PersonaTrabajo",
+        back_populates="persona",
+        lazy="selectin",
+    )
 
     @property
     def nombre_completo(self):
@@ -171,3 +177,19 @@ class PersonaEtiqueta(Base):
 
     def __repr__(self):
         return f"<PersonaEtiqueta(persona={self.persona_id}, etiqueta={self.etiqueta_id})>"
+
+
+class PersonaTrabajo(Base):
+    """Lugar de trabajo de una persona (solo nombre de empresa, sin sueldo/periodo)."""
+    __tablename__ = "persona_trabajo"
+
+    id = Column(Integer, primary_key=True, index=True)
+    persona_id = Column(
+        Integer, ForeignKey("personas.id", ondelete="CASCADE"), nullable=False
+    )
+    empresa_nombre = Column(String(300), nullable=False)
+
+    persona = relationship("Persona", back_populates="trabajos")
+
+    def __repr__(self):
+        return f"<PersonaTrabajo(persona_id={self.persona_id}, empresa='{self.empresa_nombre}')>"

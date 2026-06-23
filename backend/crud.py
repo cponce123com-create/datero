@@ -11,7 +11,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from models import Persona, Relacion, Etiqueta, PersonaEtiqueta
+from models import Persona, Relacion, Etiqueta, PersonaEtiqueta, PersonaTrabajo
 from schemas import (
     PersonaCreate, PersonaUpdate,
     RelacionCreate, PersonaEtiquetaAssign,
@@ -297,3 +297,22 @@ def personas_por_etiqueta(db: Session, etiqueta_nombre: str) -> List[Persona]:
         )
         .all()
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRABAJOS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def registrar_trabajo(db: Session, persona_id: int, empresa_nombre: str) -> PersonaTrabajo:
+    """Registra un lugar de trabajo para una persona (evita duplicados)."""
+    existente = db.query(PersonaTrabajo).filter(
+        PersonaTrabajo.persona_id == persona_id,
+        PersonaTrabajo.empresa_nombre == empresa_nombre,
+    ).first()
+    if existente:
+        return existente
+    t = PersonaTrabajo(persona_id=persona_id, empresa_nombre=empresa_nombre)
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return t

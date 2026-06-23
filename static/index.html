@@ -40,6 +40,7 @@
                 <button id="btn-etiquetas" class="btn btn-outline btn-sm">🏷 Etiquetas</button>
                 <button id="btn-visorbd" class="btn btn-outline btn-sm">📊 BD</button>
                 <button id="btn-importar" class="btn btn-outline btn-sm">📥 Importar</button>
+                <button id="btn-importar-inteligente" class="btn btn-primary btn-sm">🧠 Importar</button>
             </nav>
         </div>
     </header>
@@ -264,6 +265,29 @@
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" data-close="modal-importar">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Importar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: SMART IMPORT (LEDER DATA) ═══ -->
+    <div id="modal-importar-inteligente" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2>🧠 Importar desde LEDER DATA</h2>
+                <button class="modal-close" data-close="modal-importar-inteligente">&times;</button>
+            </div>
+            <form id="form-importar-inteligente" class="modal-form">
+                <p class="import-info">Pegue aqu&iacute; el texto completo del bot LEDER DATA. El sistema extraer&aacute; autom&aacute;ticamente los datos de la persona, su lugar de trabajo y los familiares, creando las relaciones.</p>
+                <div class="form-group">
+                    <label for="si-textarea">Datos LEDER DATA</label>
+                    <textarea id="si-textarea" class="import-textarea" rows="15" placeholder="Pegue todo el mensaje aqu&iacute;..."></textarea>
+                </div>
+                <div id="si-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;background:var(--color-success-light);border:1px solid #bbf7d0;"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-importar-inteligente">Cerrar</button>
+                    <button type="submit" class="btn btn-primary">Importar Inteligentemente</button>
                 </div>
             </form>
         </div>
