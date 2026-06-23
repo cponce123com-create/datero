@@ -170,9 +170,15 @@ def obtener_relaciones_directas(db: Session, persona_id: int) -> List[dict]:
         .filter(Relacion.persona_origen_id == persona_id)
         .all()
     ):
+        # Invertir el tipo: si la persona es padre/madre del otro,
+        # mostrar que el otro es hijo (perspectiva del familiar)
+        tipo_invertido = rel.tipo_relacion
+        if rel.tipo_relacion in ("padre", "madre"):
+            tipo_invertido = "hijo"
+
         resultados.append({
             "relacion_id": rel.id,
-            "tipo_relacion": rel.tipo_relacion,
+            "tipo_relacion": tipo_invertido,
             "certeza": rel.certeza,
             "notas": rel.notas,
             "persona_relacionada_id": rel.persona_destino_id,
@@ -185,14 +191,11 @@ def obtener_relaciones_directas(db: Session, persona_id: int) -> List[dict]:
         .filter(Relacion.persona_destino_id == persona_id)
         .all()
     ):
-        # Invertir el tipo para padre/madre → hijo
-        tipo_invertido = rel.tipo_relacion
-        if rel.tipo_relacion == "padre" or rel.tipo_relacion == "madre":
-            tipo_invertido = "hijo"
-
+        # NO invertir: mostrar el tipo original (padre/madre/hermano)
+        # porque describe la relación del familiar hacia la persona
         resultados.append({
             "relacion_id": rel.id,
-            "tipo_relacion": tipo_invertido,
+            "tipo_relacion": rel.tipo_relacion,
             "certeza": rel.certeza,
             "notas": rel.notas,
             "persona_relacionada_id": rel.persona_origen_id,
