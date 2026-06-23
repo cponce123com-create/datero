@@ -37,6 +37,7 @@ logger.setLevel(logging.INFO)
 
 # ─── Constantes ────────────────────────────────────────────────────────────
 BASE_URL = "https://e-consultaruc.sunat.gob.pe"
+CONSULTA_URL = BASE_URL + "/cl-ti-itmrconsruc/jcrS00Alias"
 TIMEOUT = 30
 MAX_RETRIES = 3
 CACHE_TTL = timedelta(hours=24)
@@ -131,79 +132,27 @@ class SunatScraper:
     # ── Flujo interno ─────────────────────────────────────────────────
 
     def _consultar(self, ruc: str) -> dict:
-        """Ejecuta el flujo completo de consulta."""
-        num_rnd = self._obtener_num_rnd()
-        html = self._enviar_consulta(ruc, num_rnd)
-        return self._parsear_html(html, ruc)
+        """Ejecuta el flujo completo de consulta.
 
-    def _obtener_num_rnd(self) -> str:
+        Basado en el patrón de la macro VBA de Excel que scrapa SUNAT:
+        GET con accion=consPorRuc&actReturn=1&modo=1&nroRuc={ruc}
         """
-        Paso 1: Obtiene la página inicial de SUNAT y extrae el token necesario.
+        # Obtener sesión inicial (cookies F5/Cloudflare)
+        try:
+            self._session.get(BASE_URL + "/", timeout=TIMEOUT)
+        except requests.exceptions.RequestException:
+            pass  # La página inicial puede fallar, las cookies persisten
 
-        SUNAT cambió su portal. Ahora no usa numRnd, requiere session cookies
-        y un token del formulario.
-
-        Si no se puede obtener el token, lanza SunatScraperError para
-        que el endpoint haga fallback a apiperu.dev.
-        """
+        # Consultar RUC via GET (patrón VBA)
         try:
             resp = self._session.get(
-                BASE_URL + "/",
-                timeout=TIMEOUT,
-            )
-            resp.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise SunatScraperError(f"Error al obtener página inicial: {e}")
-
-        html = resp.text
-
-        # Detectar CAPTCHA o bloqueo
-        if self._es_captcha(html):
-            raise CaptchaDetectedError("SUNAT requiere CAPTCHA")
-
-        # Buscar numRnd (formato antiguo)
-        match = re.search(
-            r'''name=["']numRnd["'][^>]*value=["']([^"']+)["']''',
-            html
-        )
-        if match:
-            num_rnd = match.group(1)
-            logger.debug(f"numRnd obtenido: {num_rnd[:20]}...")
-            return num_rnd
-
-        # Intentar obtener token (nuevo formato)
-        match = re.search(
-            r'''name=["']token["'][^>]*value=["']([^"']+)["']''',
-            html
-        )
-        if match:
-            logger.debug("Token obtenido (nuevo formato SUNAT)")
-            return match.group(1)
-
-        # No se encontró ni numRnd ni token → SUNAT cambió su página
-        # Lanzar error para que el endpoint haga fallback
-        raise SunatScraperError(
-            "SUNAT cambió su portal. No se pudo obtener token de consulta. "
-            "Usando servicio alternativo..."
-        )
-
-    def _enviar_consulta(self, ruc: str, num_rnd: str) -> str:
-        """
-        Paso 2: Envía el formulario de consulta con el RUC.
-
-        POST https://e-consultaruc.sunat.gob.pe/
-        → datos: numRnd, ruc, accion=buscarPorRuc
-        """
-        data = {
-            "accion": "buscarPorRuc",
-            "numRnd": num_rnd,
-            "ruc": ruc,
-        }
-
-        try:
-            resp = self._session.post(
-                BASE_URL + "/",
-                data=data,
+                CONSULTA_URL,
+                params={
+                    "accion": "consPorRuc",
+                    "actReturn": "1",
+                    "modo": "1",
+                    "nroRuc": ruc,
+                },
                 timeout=TIMEOUT,
             )
             resp.raise_for_status()
@@ -211,14 +160,23 @@ class SunatScraper:
             raise SunatScraperError(f"Error al consultar RUC {ruc}: {e}")
 
         html = resp.text
+        size = len(html)
 
         if self._es_captcha(html):
             raise CaptchaDetectedError("SUNAT requiere CAPTCHA")
 
-        # Verificar que la respuesta contenga datos (no mensaje de error)
-        if "No se encontraron resultados" in html or "no existe" in html.lower():
+        if size < 500:
+            raise SunatScraperError(
+                f"Respuesta vacía de SUNAT ({size} bytes)"
+            )
+
+        # Verificar que el HTML contenga datos (no solo el formulario vacío)
+        # El formulario vacío tiene ~22835 bytes
+        # Los datos reales agregan ~5000+ bytes con tablas
+        if "No se encontraron resultados" in html:
             raise SunatScraperError(f"No se encontraron datos para el RUC {ruc}")
 
+        logger.info(f"RUC {ruc}: {size} bytes recibidos de SUNAT")
         return html
 
     def _parsear_html(self, html: str, ruc: str) -> dict:
