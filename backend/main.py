@@ -426,7 +426,7 @@ def api_importar_inteligente(
 
     # ── DETECTAR MODO ──────────────────────────────────────────────────────
     primera_linea = raw.strip().split("\n")[0] if raw.strip() else ""
-    es_batch = "\t" in primera_linea or (len(primera_linea) >= 11 and primera_linea[:2] == "10" and primera_linea[2:10].isdigit())
+    es_batch = "\t" in primera_linea or (len(primera_linea) >= 11 and primera_linea[2:10].isdigit())
 
         # ── MODO BATCH RUC 10 ─────────────────────────────────────────────────
     if es_batch:
@@ -458,7 +458,7 @@ def api_importar_inteligente(
             if not nombre_completo: continue
 
             dni = None
-            if len(ruc) == 11 and ruc[:2] == "10": dni = ruc[2:10]
+            if len(ruc) == 11 and ruc[2:10].isdigit(): dni = ruc[2:10]
             elif len(ruc) == 8 and ruc.isdigit(): dni = ruc
             if not dni: errores.append(f"RUC invalido: {nombre_completo}"); continue
 
