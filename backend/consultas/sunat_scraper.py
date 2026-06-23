@@ -177,7 +177,7 @@ class SunatScraper:
             raise SunatScraperError(f"No se encontraron datos para el RUC {ruc}")
 
         logger.info(f"RUC {ruc}: {size} bytes recibidos de SUNAT")
-        return html
+        return self._parsear_html(html, ruc)
 
     def _parsear_html(self, html: str, ruc: str) -> dict:
         """
