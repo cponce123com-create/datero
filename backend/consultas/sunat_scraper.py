@@ -242,6 +242,7 @@ class SunatScraper:
             "comprobantes_autorizados": "",
             "sistema_emision": "",
             "afiliado_ple": "",
+            "representante_legal": None,  # {nombre, dni, cargo} o None
         }
 
         # Buscar todas las tablas en la página
@@ -273,9 +274,7 @@ class SunatScraper:
                 elif "condición" in label or "condicion" in label:
                     data["condicion"] = valor
                 elif "dirección" in label or "direccion" in label:
-                    # Puede incluir dirección completa
                     data["direccion"] = valor
-                    # Intentar extraer ubigeo si está en celdas adicionales
                     if len(texto_celdas) >= 5:
                         data["departamento"] = texto_celdas[2]
                         data["provincia"] = texto_celdas[3]
@@ -297,13 +296,76 @@ class SunatScraper:
                 elif "ple" in label:
                     data["afiliado_ple"] = valor
 
-        # Si no se encontró razón social, intentar buscar en <strong> o <h3>
+        # Si no se encontró razón social, buscar en <strong> o <h3>
         if not data["nombre_o_razon_social"]:
             for tag in soup.find_all(["strong", "h3", "h4"]):
                 texto = tag.get_text(strip=True)
                 if texto and len(texto) > 5 and not texto.startswith("http"):
                     data["nombre_o_razon_social"] = texto
                     break
+
+        # ── Extraer Representante Legal ────────────────────────────────
+        # El bloque de representantes legales suele estar precedido por
+        # un encabezado <h3> o <strong> con "Representante Legal"
+        for encabezado in soup.find_all(["h3", "h4", "strong"]):
+            if "representante" in encabezado.get_text(strip=True).lower():
+                # Buscar la tabla siguiente a este encabezado
+                tabla_rep = encabezado.find_next("table")
+                if tabla_rep:
+                    filas_rep = tabla_rep.find_all("tr")
+                    for fila_rep in filas_rep:
+                        celdas_rep = fila_rep.find_all(["td", "th"])
+                        textos = [c.get_text(strip=True) for c in celdas_rep]
+
+                        # Formato típico: Tipo | Apellidos/Nombres | DNI | Cargo | Desde
+                        if len(textos) >= 3:
+                            # Buscar DNI en las celdas
+                            dni_rep = ""
+                            nombre_rep = ""
+                            cargo_rep = "representante legal"
+                            for t in textos:
+                                t_clean = t.replace("-", "").strip()
+                                if t_clean.isdigit() and len(t_clean) == 8:
+                                    dni_rep = t_clean
+                                elif not t_clean.isdigit() and len(t_clean) > 5:
+                                    nombre_rep = t
+
+                            # Si hay nombre y DNI, guardar
+                            if dni_rep and nombre_rep:
+                                # Extraer cargo de textos restantes
+                                for t in textos:
+                                    t_low = t.lower()
+                                    if "representante" in t_low or "gerente" in t_low or "apoderado" in t_low or "director" in t_low or "socio" in t_low:
+                                        cargo_rep = t
+
+                                data["representante_legal"] = {
+                                    "nombre": nombre_rep,
+                                    "dni": dni_rep,
+                                    "cargo": cargo_rep,
+                                }
+                                break  # Solo el primer representante legal
+
+        # Si no se encontró en tabla, buscar en texto plano
+        # Patrón: DNI seguido de nombre en el texto
+        if not data["representante_legal"]:
+            import re as re_mod
+            body_text = soup.get_text()
+            # Buscar patrón: 8 dígitos seguido de nombres
+            patron_rep = re_mod.search(
+                r'''(?:representante|gerente|apoderado|director)\s*
+                    (?:legal|general)?\s*[:\-]?\s*
+                    (?:[\w\s]+\s+)?      # nombre
+                    (\d{8})\s*[\-]?\s*   # DNI
+                    ([\w\sÁÉÍÓÚáéíóúñÑ,]+)  # nombre/apellidos
+                ''',
+                body_text, re_mod.IGNORECASE | re_mod.VERBOSE
+            )
+            if patron_rep:
+                data["representante_legal"] = {
+                    "nombre": patron_rep.group(2).strip(),
+                    "dni": patron_rep.group(1),
+                    "cargo": "representante legal",
+                }
 
         return data
 

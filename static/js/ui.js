@@ -685,7 +685,70 @@ async function consultarRuc() {
         var d = await af(A + "/consultar/ruc?ruc=" + encodeURIComponent(ruc));
         document.getElementById("e-nombre").value = d.nombre_o_razon_social || d.nombre || "";
         if (d.direccion) document.getElementById("e-direccion").value = d.direccion;
-        st("Datos cargados desde SUNAT", "success");
+
+        // Mostrar representante legal en banner si existe
+        var banner = document.getElementById("rep-legal-banner");
+        if (!banner) {
+            banner = document.createElement("div");
+            banner.id = "rep-legal-banner";
+            banner.style.cssText = "margin-top:12px;padding:12px;border-radius:8px;font-size:0.9rem;";
+            var formEmpresa = document.getElementById("form-empresa");
+            formEmpresa.parentNode.insertBefore(banner, formEmpresa.nextSibling);
+        }
+
+        if (d.representante_legal && d.representante_legal.dni) {
+            var rep = d.representante_legal;
+            banner.style.display = "block";
+            banner.style.background = "var(--color-success-light)";
+            banner.style.border = "1px solid #bbf7d0";
+            banner.innerHTML = "<strong>👤 Rep. Legal:</strong> " + es(rep.nombre) +
+                " (DNI: " + es(rep.dni) + ")<br>" +
+                '<button class="btn btn-primary btn-xs" style="margin-top:8px;" onclick="crearVinculoDesdeConsulta(\x27' + ruc + '\x27, \x27' + rep.dni + '\x27)">🔗 Vincular ' + es(rep.nombre.split(" ").slice(-2).join(" ")) + "</button>";
+        } else {
+            banner.style.display = "none";
+        }
+
+        var estadoMsg = d.estado ? " | " + d.estado : "";
+        st("✅ Datos cargados desde SUNAT" + estadoMsg, "success");
     } catch (err) { st(err.message, "error"); }
     btn.disabled = false; btn.textContent = "🔍 RUC";
+}
+
+/* ─── Crear vinculo desde consulta RUC ─── */
+window.crearVinculoDesdeConsulta = async function(ruc, dniRep) {
+    if (!confirm("Crear persona con DNI " + dniRep + " y vincularla a " + ruc + " como representante legal?")) return;
+    try {
+        // 1. Consultar datos del DNI via apiperu.dev
+        var personaData;
+        try {
+            personaData = await af(A + "/consultar/dni?dni=" + encodeURIComponent(dniRep));
+        } catch (e) {
+            personaData = { nombres: "", apellido_paterno: "", apellido_materno: "" };
+        }
+
+        // 2. Crear la persona
+        var newPersona = await af(A + "/personas", {
+            method: "POST",
+            body: JSON.stringify({
+                dni: dniRep,
+                nombres: personaData.nombres || "PENDIENTE",
+                apellido_paterno: personaData.apellido_paterno || "PENDIENTE",
+                apellido_materno: personaData.apellido_materno || null,
+            })
+        });
+        st("Persona creada: " + newPersona.nombre_completo, "success");
+
+        // 3. Vincularla a la empresa como representante legal
+        await af(A + "/persona-empresa", {
+            method: "POST",
+            body: JSON.stringify({
+                persona_dni: dniRep,
+                empresa_ruc: ruc,
+                cargo: "representante legal",
+            })
+        });
+        st("✅ Vinculado como representante legal", "success");
+        cm("modal-empresa");
+        cf(dniRep);
+    } catch (err) { st(err.message, "error"); }
 }
