@@ -428,11 +428,9 @@ def api_importar_inteligente(
     primera_linea = raw.strip().split("\n")[0] if raw.strip() else ""
     es_batch = "\t" in primera_linea or (len(primera_linea) >= 11 and primera_linea[:2] == "10" and primera_linea[2:10].isdigit())
 
-    # ── MODO BATCH RUC 10 ─────────────────────────────────────────────────
+        # ── MODO BATCH RUC 10 ─────────────────────────────────────────────────
     if es_batch:
-        creados = 0
         errores = []
-        tags_asignados = 0
 
         # Crear/obtener etiqueta
         etiqueta_id = None
@@ -444,68 +442,85 @@ def api_importar_inteligente(
                 db.flush()
             etiqueta_id = e_existente.id
 
+        # ── PARSEAR TODAS LAS LÍNEAS ────────────────────────────────────────
+        personas_nuevas = []  # (dni, nombres, ap_paterno, ap_materno)
+        dnis_a_crear = set()
         for line in raw.strip().split("\n"):
             line = line.strip()
-            if not line:
-                continue
+            if not line: continue
+
             parts = line.split("\t")
             ruc = parts[0].strip() if len(parts) > 0 else ""
             nombre_completo = parts[1].strip() if len(parts) > 1 else ""
-
-            # Si no hay tab, intentar espacio como separador
             if not nombre_completo:
                 m = re.match(r"^(\d{11})\s+(.+)", line)
-                if m:
-                    ruc = m.group(1)
-                    nombre_completo = m.group(2).strip()
+                if m: ruc = m.group(1); nombre_completo = m.group(2).strip()
+            if not nombre_completo: continue
 
-            if not nombre_completo:
-                continue
-
-            # Extraer DNI del RUC 10: posiciones 2-9 (0-indexed)
             dni = None
-            if len(ruc) == 11 and ruc[:2] == "10":
-                dni = ruc[2:10]
-            elif len(ruc) == 8 and ruc.isdigit():
-                dni = ruc
+            if len(ruc) == 11 and ruc[:2] == "10": dni = ruc[2:10]
+            elif len(ruc) == 8 and ruc.isdigit(): dni = ruc
+            if not dni: errores.append(f"RUC invalido: {nombre_completo}"); continue
 
-            if not dni:
-                errores.append(f"RUC invalido: {nombre_completo}")
-                continue
-
-            # Parsear nombre: APELLIDO1 APELLIDO2 NOMBRES...
             nombre_parts = nombre_completo.split()
             if len(nombre_parts) >= 3:
-                ap_paterno = nombre_parts[0]
-                ap_materno = nombre_parts[1]
-                nombres = " ".join(nombre_parts[2:])
+                ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = " ".join(nombre_parts[2:])
             elif len(nombre_parts) == 2:
-                ap_paterno = nombre_parts[0]
-                ap_materno = nombre_parts[1]
-                nombres = ""
+                ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = ""
             else:
-                ap_paterno = nombre_parts[0] if nombre_parts else ""
-                ap_materno = None
-                nombres = ""
+                ap_p = nombre_parts[0] if nombre_parts else ""; ap_m = None; nom = ""
+            personas_nuevas.append((dni, nom, ap_p, ap_m))
+            dnis_a_crear.add(dni)
 
-            try:
-                existente = db.query(Persona).filter(Persona.dni == dni).first()
-                if existente:
-                    persona = existente
-                else:
-                    persona = Persona(dni=dni, nombres=nombres, apellido_paterno=ap_paterno, apellido_materno=ap_materno)
-                    db.add(persona)
-                    db.flush()
-                    creados += 1
+        if not personas_nuevas:
+            return SmartImportOut(mensaje="No se encontraron datos validos", persona_dni=None, errores=errores)
 
-                if etiqueta_id:
-                    pe_existente = db.query(PE).filter(PE.persona_id == persona.id, PE.etiqueta_id == etiqueta_id).first()
-                    if not pe_existente:
-                        db.add(PE(persona_id=persona.id, etiqueta_id=etiqueta_id))
-                        tags_asignados += 1
-            except Exception as e:
-                errores.append(f"Error {dni}: {str(e)}")
+        # ── CONSULTAR EXISTENTES EN UNA SOLA QUERY ──────────────────────────
+        dnis_existentes = set(
+            row[0] for row in db.query(Persona.dni).filter(Persona.dni.in_(list(dnis_a_crear))).all()
+        )
+        dnis_existentes_etiqueta = set()
+        if etiqueta_id and dnis_existentes:
+            dnis_existentes_etiqueta = set(
+                row[0] for row in db.query(PE.persona_id).join(Persona, Persona.id == PE.persona_id).filter(
+                    Persona.dni.in_(list(dnis_existentes)), PE.etiqueta_id == etiqueta_id
+                ).all()
+            )
 
+        # ── BULK INSERT (un solo lote) ──────────────────────────────────────
+        objects_to_add = []
+        persona_dni_id_map = {}  # dni -> id after flush
+        creados = 0
+        for dni, nom, ap_p, ap_m in personas_nuevas:
+            if dni not in dnis_existentes:
+                p = Persona(dni=dni, nombres=nom, apellido_paterno=ap_p, apellido_materno=ap_m)
+                objects_to_add.append(p)
+                creados += 1
+
+        if objects_to_add:
+            db.add_all(objects_to_add)
+            db.flush()  # Solo 1 flush para todos
+            for p in objects_to_add:
+                persona_dni_id_map[p.dni] = p.id
+
+        # ── BULK TAG ASSIGNMENT ────────────────────────────────────────────
+        tag_objects = []
+        tags_asignados = 0
+        if etiqueta_id:
+            for dni, nom, ap_p, ap_m in personas_nuevas:
+                pid = persona_dni_id_map.get(dni)
+                if not pid:
+                    if dni in dnis_existentes and dni not in dnis_existentes_etiqueta:
+                        pid_row = db.query(Persona.id).filter(Persona.dni == dni).first()
+                        pid = pid_row[0] if pid_row else None
+                if pid:
+                    tag_objects.append(PE(persona_id=pid, etiqueta_id=etiqueta_id))
+                    tags_asignados += 1
+
+        if tag_objects:
+            db.add_all(tag_objects)
+
+        # ── ÚNICO COMMIT ────────────────────────────────────────────────────
         db.commit()
         registrar_auditoria(db, user.id, user.username, "CREATE", "ImportarBatch", f"{creados} creados" + (f" etiqueta={etiqueta_nombre}" if etiqueta_nombre else ""))
 
@@ -515,7 +530,7 @@ def api_importar_inteligente(
             errores=errores,
         )
 
-    # ── MODO LEDER DATA (individual) ──────────────────────────────────────
+    # ── MODO LEDER DATA (individual) ──────────────────────────────────────# ── MODO LEDER DATA (individual) ──────────────────────────────────────
     errores = []
     persona = None
     trabajo_reg = None
