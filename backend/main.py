@@ -75,20 +75,38 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan simplificado: ya no ejecuta DDL (migraciones via Alembic).
-    Solo crea el usuario admin por defecto si no existe.
+    Lifespan: ejecuta migraciones Alembic al arrancar y crea admin por defecto.
+
+    Las migraciones via Alembic son seguras (solo ejecutan DDL si hay cambios
+    pendientes). Esto evita tener que ejecutar 'alembic upgrade head' manualmente
+    en cada deploy de Render.
     """
-    db = next(get_db())
+    # 1. Migraciones Alembic
     try:
-        seed_usuario_admin(db)
-        # Activar pg_trgm (no bloquea, es CREATE IF NOT EXISTS)
+        from alembic.config import Config as AlembicConfig
+        from alembic import command
+        alembic_cfg = AlembicConfig("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+    except Exception as e:
+        print(f"[lifespan] Alembic migration error (non-fatal): {e}")
+
+    # 2. Extension pg_trgm
+    try:
         from sqlalchemy import text as sa_text
         from database import engine as _eng
         with _eng.connect() as c:
             c.execute(sa_text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
             c.commit()
+    except Exception as e:
+        print(f"[lifespan] pg_trgm error (non-fatal): {e}")
+
+    # 3. Usuario admin por defecto
+    db = next(get_db())
+    try:
+        seed_usuario_admin(db)
     finally:
         db.close()
+
     yield
 
 
