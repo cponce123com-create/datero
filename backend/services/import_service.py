@@ -216,7 +216,8 @@ def _importar_csv(db: Session, personas: List[PersonaCreate]) -> ImportOut:
 
 def _importar_ruc_batch(db: Session, texto: str, etiqueta_id: Optional[int], etiqueta_nombre: str) -> ImportOut:
     errores = []
-    personas_data, empresas_data = {}, {}
+    personas_data = []
+    empresas_data = []
 
     for line in texto.strip().split("\n"):
         line = line.strip()
@@ -240,26 +241,35 @@ def _importar_ruc_batch(db: Session, texto: str, etiqueta_id: Optional[int], eti
             if not dni.isdigit():
                 errores.append(f"DNI invalido en RUC {ruc}: {nombre_completo}")
                 continue
-            nom, ap_p, ap_m = _separar_nombre_completo(nombre_completo)
-            personas_data[dni] = (nom, ap_p, ap_m)
+            nom, ap_p, ap_m = _parsear_nombre_ruc10(nombre_completo)
+            personas_data.append({"dni": dni, "nombres": nom, "ap_p": ap_p, "ap_m": ap_m, "ruc": ruc, "nombre": nombre_completo})
         elif ruc[0] in ("2", "3"):
-            empresas_data[ruc] = nombre_completo
+            empresas_data.append({"ruc": ruc, "nombre": nombre_completo})
         else:
             errores.append(f"Tipo RUC no reconocido ({ruc[0]}): {nombre_completo}")
 
     if not personas_data and not empresas_data:
         return ImportOut(mensaje="No se encontraron datos validos", errores=errores)
 
-    pc = ec = pet = eet = 0
-    for dni, (nom, ap_p, ap_m) in personas_data.items():
-        persona, creada = _obtener_o_crear_persona(db, dni, nom, ap_p, ap_m)
+    pc = ec = vc = rc = pet = eet = 0
+    for pdata in personas_data:
+        persona, creada = _obtener_o_crear_persona(db, pdata["dni"], pdata["nombres"], pdata["ap_p"], pdata["ap_m"])
         if creada:
             pc += 1
         if _etiquetar_persona(db, persona.id, etiqueta_id):
             pet += 1
 
-    for ruc, nombre in empresas_data.items():
-        empresa, creada = _obtener_o_crear_empresa(db, ruc, nombre)
+        # Crear empresa RUC-10 y vincular persona como titular
+        empresa, e_creada = _obtener_o_crear_empresa(db, pdata["ruc"], persona.nombre_completo)
+        if e_creada:
+            ec += 1
+        if _etiquetar_empresa(db, empresa.id, etiqueta_id):
+            eet += 1
+        if _vincular_si_no_existe(db, persona.id, empresa.id, "titular - persona natural con negocio"):
+            vc += 1
+
+    for edata in empresas_data:
+        empresa, creada = _obtener_o_crear_empresa(db, edata["ruc"], edata["nombre"])
         if creada:
             ec += 1
         if _etiquetar_empresa(db, empresa.id, etiqueta_id):
@@ -270,13 +280,14 @@ def _importar_ruc_batch(db: Session, texto: str, etiqueta_id: Optional[int], eti
     partes_msg = []
     if pc: partes_msg.append(f"{pc} persona(s) creada(s)")
     if ec: partes_msg.append(f"{ec} empresa(s) creada(s)")
+    if vc: partes_msg.append(f"{vc} vinculo(s) RUC-10")
     if tet: partes_msg.append(f"{tet} etiquetado(s) como '{etiqueta_nombre}'")
     if not partes_msg: partes_msg.append("Todo ya existia")
 
     return ImportOut(
         mensaje=f"Batch: {', '.join(partes_msg)}",
         total_procesadas=len(personas_data) + len(empresas_data),
-        personas_creadas=pc, empresas_creadas=ec, etiquetados=tet, errores=errores,
+        personas_creadas=pc, empresas_creadas=ec, vinculos_creados=vc, etiquetados=tet, errores=errores,
     )
 
 
