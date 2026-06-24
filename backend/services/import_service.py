@@ -173,10 +173,11 @@ def detectar_formato(datos: ImportarRequest) -> str:
     if re.search(r"^\s*DNI\s*:", texto, re.MULTILINE) and re.search(r"^\s*NOMBRES\s*:", texto, re.MULTILINE | re.IGNORECASE):
         return "leder_individual"
 
-    # Detectar SUNAT macro 21 columnas sin header: primera linea RUC + TAB + >=20 tabs
+    # Detectar SUNAT macro multi-columna sin header:
+    # primera linea empieza con RUC + TAB + 10+ tabs (11+ columnas)
     primera_data = texto.split("\n", 1)[0].strip()
     num_tabs = primera_data.count("\t")
-    if re.match(r"^\d{11}\t", primera_data) and num_tabs >= 20:
+    if re.match(r"^\d{11}\t", primera_data) and num_tabs >= 10:
         return "sunat_macro"
 
     # Heuristica RUC batch: primera linea tabulada o "11digitos resto"
