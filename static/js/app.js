@@ -3,8 +3,22 @@
  */
 
 /* ─── Funciones que ui.js espera ─── */
-function sl() { var e = document.getElementById("login-overlay"); if (e) e.classList.remove("hidden"); }
-function hl() { var e = document.getElementById("login-overlay"); if (e) e.classList.add("hidden"); }
+function hl() {
+    var e = document.getElementById("login-overlay");
+    if (e) e.classList.add("hidden");
+    var w = document.getElementById("app-wrapper");
+    if (w) w.style.display = "flex";
+    try {
+        var u = sessionStorage.getItem("rc_user") || "Admin";
+        var r = sessionStorage.getItem("rc_rol") || "admin";
+        var av = document.getElementById("sidebar-user-avatar");
+        if (av) av.textContent = u.charAt(0).toUpperCase();
+        var un = document.getElementById("sidebar-user-name");
+        if (un) un.textContent = u;
+        var ur = document.getElementById("sidebar-user-rol");
+        if (ur) ur.textContent = r;
+    } catch(e) {}
+}
 
 /* ─── Dark Mode ─── */
 function toggleDarkMode() {
@@ -223,6 +237,14 @@ async function _init() {
     }
 }
 
+/* ─── Logout (cierra sesion y oculta app) ─── */
+function sl() {
+    var e = document.getElementById("login-overlay");
+    if (e) e.classList.remove("hidden");
+    var w = document.getElementById("app-wrapper");
+    if (w) w.style.display = "none";
+}
+
 /* ─── Start ─── */
 
 var savedToken = getAuth();
@@ -278,35 +300,7 @@ document.addEventListener("DOMContentLoaded", function(){
     }
 });
 
-/* ─── Override hl() and sl() ─── */
-var _origHl2 = window.hl;
-window.hl = function() {
-    if (_origHl2) _origHl2();
-    var w = document.getElementById("app-wrapper");
-    if (w) w.style.display = "flex";
-    // Update sidebar user
-    try {
-        var u = sessionStorage.getItem("rc_user") || "Admin";
-        var r = sessionStorage.getItem("rc_rol") || "admin";
-        var av = document.getElementById("sidebar-user-avatar");
-        if (av) av.textContent = u.charAt(0).toUpperCase();
-        var un = document.getElementById("sidebar-user-name");
-        if (un) un.textContent = u;
-        var ur = document.getElementById("sidebar-user-rol");
-        if (ur) ur.textContent = r;
-    } catch(e){}
-    // Load stats
-    setTimeout(cargarKPIs, 300);
-};
-
-var _origSl2 = window.sl;
-window.sl = function() {
-    if (_origSl2) _origSl2();
-    var w = document.getElementById("app-wrapper");
-    if (w) w.style.display = "none";
-};
-
-/* ─── KPI Loader ─── */
+/* ─── New Layout Navigation ─── */
 async function cargarKPIs() {
     try {
         var [p, e, et] = await Promise.all([
