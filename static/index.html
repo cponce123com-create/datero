@@ -54,6 +54,7 @@ console.log("[BLOCK0] Login script executing");
                 Red<span class="logo-highlight">Corruptela</span>
             </h1>
             <nav class="header-actions">
+                <button id="theme-toggle" class="theme-toggle" onclick="toggleDarkMode()" title="Modo oscuro">🌙</button>
                 <button id="btn-nueva-persona" class="btn btn-primary btn-sm">+ Persona</button>
                 <button id="btn-nueva-relacion" class="btn btn-outline btn-sm">+ Relación</button>
                 <button id="btn-nueva-empresa" class="btn btn-outline btn-sm">🏢 + Empresa</button>
@@ -66,6 +67,70 @@ console.log("[BLOCK0] Login script executing");
             </nav>
         </div>
     </header>
+
+    <!-- ═══ HERO ═══ -->
+    <section class="hero" id="hero-section">
+        <div class="hero-content">
+            <span class="hero-badge">🔍 Investigación Periodística</span>
+            <h1>Red <span class="highlight">Corruptela</span></h1>
+            <p class="hero-subtitle">
+                Inteligencia para periodistas de investigación.<br>
+                Construye tu base de datos de personas, empresas y relaciones.<br>
+                Detecta patrones de corrupción y favoritismo político.
+            </p>
+            <div class="hero-actions">
+                <button class="btn btn-primary btn-lg" onclick="document.getElementById('search-input').focus()">🔍 Explorar base de datos</button>
+                <button class="btn btn-outline btn-lg" onclick="cargarDashboard()">📊 Ver dashboard</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- ═══ STATS ═══ -->
+    <section class="stats" id="stats-section">
+        <div class="stat-card">
+            <span class="stat-icon">👥</span>
+            <div><span class="stat-number" id="totalPersonas">—</span><span class="stat-label">Personas</span></div>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon">🏢</span>
+            <div><span class="stat-number" id="totalEmpresas">—</span><span class="stat-label">Empresas</span></div>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon">🔗</span>
+            <div><span class="stat-number" id="totalRelaciones">—</span><span class="stat-label">Relaciones</span></div>
+        </div>
+        <div class="stat-card">
+            <span class="stat-icon">🏷️</span>
+            <div><span class="stat-number" id="totalEtiquetas">—</span><span class="stat-label">Etiquetas</span></div>
+        </div>
+    </section>
+
+    <!-- ═══ FEATURES ═══ -->
+    <section class="features" id="features-section">
+        <h2 class="section-title">¿Qué puedes hacer con Red Corruptela?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">👤</div>
+                <h3>Base de datos de personas</h3>
+                <p>Registra personas con DNI, nombres, fechas y fotos. Busca por cualquier campo con autocompletado.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🧬</div>
+                <h3>Parentescos automáticos</h3>
+                <p>El sistema deduce abuelos, tíos, cuñados, primos y suegros a partir de las relaciones registradas.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🏢</div>
+                <h3>Empresas y vínculos</h3>
+                <p>Registra empresas con RUC, datos SUNAT y vincula personas con cargos específicos.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🏷️</div>
+                <h3>Etiquetas y filtros</h3>
+                <p>Marca personas y empresas con etiquetas como "contratado 2024" o "proveedor municipalidad".</p>
+            </div>
+        </div>
+    </section>
 
     <!-- ═══ BARRA DE BÚSQUEDA ═══ -->
     <section class="search-section">

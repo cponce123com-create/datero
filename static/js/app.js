@@ -6,6 +6,39 @@
 function sl() { var e = document.getElementById("login-overlay"); if (e) e.classList.remove("hidden"); }
 function hl() { var e = document.getElementById("login-overlay"); if (e) e.classList.add("hidden"); }
 
+/* ─── Dark Mode ─── */
+function toggleDarkMode() {
+    var h = document.documentElement;
+    var cur = h.getAttribute("data-theme") || "light";
+    var next = cur === "dark" ? "light" : "dark";
+    h.setAttribute("data-theme", next);
+    localStorage.setItem("rc_theme", next);
+    var btn = document.getElementById("theme-toggle");
+    if (btn) btn.textContent = next === "dark" ? "☀️" : "🌙";
+}
+// Cargar preferencia guardada
+(function() {
+    var saved = localStorage.getItem("rc_theme") || "light";
+    document.documentElement.setAttribute("data-theme", saved);
+    var btn = document.getElementById("theme-toggle");
+    if (btn) btn.textContent = saved === "dark" ? "☀️" : "🌙";
+})();
+
+/* ─── Stats (Home) ─── */
+async function cargarStats() {
+    try {
+        var [p, e, r, t] = await Promise.all([
+            af(A + "/stats").catch(function(){ return {total_personas:0,total_empresas:0,total_relaciones:0,total_etiquetas:0}; }),
+            af(A + "/stats").catch(function(){ return {total_personas:0,total_empresas:0,total_relaciones:0,total_etiquetas:0}; }),
+        ]);
+        var stats = p;
+        ["Personas","Empresas","Relaciones","Etiquetas"].forEach(function(k){
+            var el = document.getElementById("total" + k);
+            if (el) el.textContent = stats["total_" + k.toLowerCase()] || 0;
+        });
+    } catch(err) { /* stats no available, show — */ }
+}
+
 /* ─── Login via API JSON ─── */
 
 async function loginAPI(username, password) {
@@ -36,6 +69,7 @@ async function _init() {
     try {
         await af(A + "/health");
         console.log("RedCorruptela API v0.3 - sesion activa");
+        cargarStats();
     } catch (err) {
         console.warn("API no disponible:", err.message);
     }
