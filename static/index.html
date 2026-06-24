@@ -591,7 +591,9 @@ console.log("[BLOCK0] Login script executing");
     <!-- ═══ TOAST ═══ -->
     <div id="toast" class="toast hidden"></div>
 
-    <script>
+    
+<script>console.log("PRE_BOTTOM: state+api will start");</script>
+<script>
     console.log("[BLOCK2] state.js+api.js starting");
 // ─── state.js (inline) ───
     var AppState={_listeners:[],_state:{editandoDni:null,editandoEmpresaRuc:null,searchTimer:null,empresaSearchTimer:null,toastTimer:null},get:function(k){return this._state[k]},set:function(k,v){this._state[k]=v;this._notify(k,v)},on:function(cb){this._listeners.push(cb)},_notify:function(k,v){this._listeners.forEach(function(cb){cb(k,v)})}};
