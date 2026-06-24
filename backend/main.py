@@ -67,10 +67,7 @@ from services.persona_service import (
     eliminar_persona_con_auditoria,
     actualizar_persona_con_auditoria,
 )
-from services.leder_parser import (
-    procesar_texto_leder,
-    LederParseResult,
-)
+from services.leder_parser import procesar_texto_leder
 
 limiter = Limiter(key_func=get_remote_address)
 
