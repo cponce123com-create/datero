@@ -78,19 +78,39 @@ async def lifespan(app: FastAPI):
     try:
         seed_usuario_admin(db)
         # Auto-migrate: agregar columnas nuevas si no existen
+        # y extender columnas existentes para soportar datos SUNAT
         from sqlalchemy import text as sa_text
         from database import engine as _eng
-        nuevas_cols = [
-            ("sistema_emision_electronica", "TEXT"),
-            ("emisor_electronico_desde", "VARCHAR(20)"),
-            ("comprobantes_electronicos", "TEXT"),
-            ("padrones", "TEXT"),
-            ("establecimientos", "TEXT"),
-        ]
         with _eng.connect() as c:
+            # Nuevas columnas SUNAT
+            nuevas_cols = [
+                ("sistema_emision_electronica", "TEXT"),
+                ("emisor_electronico_desde", "VARCHAR(20)"),
+                ("comprobantes_electronicos", "TEXT"),
+                ("padrones", "TEXT"),
+                ("establecimientos", "TEXT"),
+            ]
             for col, typ in nuevas_cols:
                 c.execute(sa_text(
                     f"ALTER TABLE empresas ADD COLUMN IF NOT EXISTS {col} {typ}"
+                ))
+            # Extender columnas existentes que se quedan cortas con datos SUNAT
+            # (VARCHAR(50) original no alcanza para direcciones largas, etc.)
+            cambios_columna = [
+                ("direccion", "TEXT"),
+                ("nombre_comercial", "TEXT"),
+                ("tipo_contribuyente", "VARCHAR(300)"),
+                ("actividad_economica", "TEXT"),
+                ("comprobantes_autorizados", "TEXT"),
+                ("sistema_emision", "TEXT"),
+                ("sistema_contabilidad", "TEXT"),
+                ("actividad_comercio_exterior", "VARCHAR(100)"),
+                ("afiliado_ple", "VARCHAR(50)"),
+                ("representante_legal_nombre", "VARCHAR(300)"),
+            ]
+            for col, new_type in cambios_columna:
+                c.execute(sa_text(
+                    f"ALTER TABLE empresas ALTER COLUMN {col} TYPE {new_type}"
                 ))
             c.commit()
     finally:
