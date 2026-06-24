@@ -60,10 +60,7 @@ console.log("[BLOCK0] Login script executing");
                 <button id="btn-etiquetas" class="btn btn-outline btn-sm">🏷 Etiquetas</button>
                 <button id="btn-visorbd" class="btn btn-outline btn-sm">📊 BD</button>
                 <button id="btn-visorempresas" class="btn btn-outline btn-sm">🏢 Empresas</button>
-                <button id="btn-importar" class="btn btn-outline btn-sm">📥 Importar</button>
-                <button id="btn-importar-inteligente" class="btn btn-primary btn-sm">🧠 Importar</button>
-                <button id="btn-importar-empresas" class="btn btn-outline btn-sm">📥 + Empresas SUNAT</button>
-                <button id="btn-importar-leder" class="btn btn-outline btn-sm">🤖 LEDER</button>
+                <button id="btn-importar" class="btn btn-primary btn-sm">📥 Importar</button>
                 <button id="btn-reset" class="btn btn-danger btn-sm" style="background:#dc2626;color:#fff;border:none;">🗑 Reset</button>
                 <button id="btn-dashboard" class="btn btn-primary btn-sm">📊 Dashboard</button>
             </nav>
@@ -415,105 +412,30 @@ console.log("[BLOCK0] Login script executing");
         </div>
     </div>
 
-    <!-- ═══ MODAL: IMPORTAR CSV ═══ -->
+    <!-- ═══ MODAL: IMPORTAR (unificado) ═══ -->
     <div id="modal-importar" class="modal hidden">
-
         <div class="modal-overlay"></div>
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
-                <h2>📥 Importar CSV</h2>
+                <h2>📥 Importar</h2>
                 <button class="modal-close" data-close="modal-importar">&times;</button>
             </div>
             <form id="form-importar" class="modal-form">
-                <p class="import-info">Pegue los datos CSV separados por comas. Formato esperado:</p>
-                <p class="import-info" style="font-family:var(--font-mono);font-size:0.82rem;padding:8px 12px;background:var(--color-bg);border-radius:var(--radius);margin-bottom:16px;">
-                    DNI,Nombres,ApellidoPaterno,ApellidoMaterno
-                </p>
                 <div class="form-group">
-                    <label for="csv-textarea">Datos CSV</label>
-                    <textarea id="csv-textarea" class="import-textarea" rows="10" placeholder="12345678,Juan Carlos,Olano,Romero&#10;87654321,María Rosa,García,López"></textarea>
+                    <label for="imp-formato">Formato</label>
+                    <select id="imp-formato" class="search-input" style="font-size:0.9rem;padding:8px;">
+                        <option value="auto">🪄 Automático (recomendado)</option>
+                        <option value="csv">📋 CSV simple (DNI,Nombres,ApellidoPaterno,ApellidoMaterno)</option>
+                        <option value="ruc_batch">🔢 Batch RUC (listado tabulado RUC + nombre)</option>
+                        <option value="sunat_macro">🏢 Empresas SUNAT (macro 21 columnas)</option>
+                        <option value="leder_individual">🧠 LEDER DATA (reporte individual)</option>
+                        <option value="leder_telegram">🤖 LEDER DATA (export Telegram HTML)</option>
+                    </select>
                 </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-importar">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Importar</button>
-                </div>
-            </form>
-        </div>
-    </div>
 
-    <!-- ═══ MODAL: SMART IMPORT ═══ -->
-    <div id="modal-importar-inteligente" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 700px;">
-            <div class="modal-header">
-                <h2>🧠 Importar desde LEDER DATA / Batch RUC 10</h2>
-                <button class="modal-close" data-close="modal-importar-inteligente">&times;</button>
-            </div>
-            <form id="form-importar-inteligente" class="modal-form">
-                <p class="import-info">Soporta dos modos:<br><b>1. LEDER DATA:</b> pegue el reporte individual.<br><b>2. Batch RUC 10:</b> pegue listado tabulado (RUC + nombre) y opcionalmente una etiqueta para todos.</p>
-                <div class="form-group">
-                    <label for="si-etiqueta">🏷 Etiqueta (opcional)</label>
-                    <input type="text" id="si-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR 2019-2022" style="font-size:0.9rem;padding:8px;">
-                </div>
-                <div class="form-group">
-                    <label for="si-textarea">Datos</label>
-                    <textarea id="si-textarea" class="import-textarea" rows="15" placeholder="Para batch RUC 10:&#10;10011477432	CORIAT CELIS ENRIQUE&#10;10027726459	JARAMILLO CALLE RICARDO&#10;&#10;O pegue reporte LEDER DATA individual..."></textarea>
-                </div>
-                <div id="si-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;background:var(--color-success-light);border:1px solid #bbf7d0;"></div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-importar-inteligente">Cerrar</button>
-                    <button type="submit" class="btn btn-primary">Importar Inteligentemente</button>
-                </div>
-            </form>
-        </div>
-    </div>
+                <p id="imp-hint" class="import-info"></p>
 
-    <!-- ═══ MODAL: IMPORTAR EMPRESAS SUNAT (21 columnas) ═══ -->
-    <div id="modal-importar-empresas" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h2>📥 Importar Empresas (SUNAT)</h2>
-                <button class="modal-close" data-close="modal-importar-empresas">&times;</button>
-            </div>
-            <form id="form-importar-empresas" class="modal-form">
-                <p class="import-info">
-                    Pegue los datos extraídos con la macro SUNAT (formato tabulado de 21 columnas).
-                    Soporta <b>RUC 10</b> (personas naturales, crea persona + empresa + vinculo),
-                    <b>RUC 20/30</b> (empresas jurídicas) y <b>representantes legales</b>.
-                </p>
-                <div class="form-group">
-                    <label for="ie-etiqueta">🏷 Etiqueta (opcional)</label>
-                    <input type="text" id="ie-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR MUNICIPALIDAD 2024" style="font-size:0.9rem;padding:8px;">
-                </div>
-                <div class="form-group">
-                    <label for="ie-textarea">Datos SUNAT (tabulados)</label>
-                    <textarea id="ie-textarea" class="import-textarea" rows="15" placeholder="INGRESAR EL NUMERO DE RUC | Número de RUC: | Tipo Contribuyente: | Nombre Comercial: | ...
-10027726459 | 10027726459 - JARAMILLO CALLE RICARDO MERCEDES | PERSONA NATURAL SIN NEGOCIO..."></textarea>
-                </div>
-                <div id="ie-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-importar-empresas">Cerrar</button>
-                    <button type="submit" class="btn btn-primary">Importar Empresas</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: IMPORTAR LEDER TELEGRAM ═══ -->
-    <div id="modal-importar-leder" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h2>🤖 Importar LEDER DATA (Telegram)</h2>
-                <button class="modal-close" data-close="modal-importar-leder">&times;</button>
-            </div>
-            <form id="form-importar-leder" class="modal-form">
-                <p class="import-info">
-                    Pegue el texto exportado de Telegram con las respuestas del bot
-                    <b>@LEDER_DATA_BOT</b>. El sistema detectara automaticamente:
-                </p>
-                <ul class="import-info" style="margin:8px 0 16px 20px;font-size:0.85rem;line-height:1.6;">
+                <ul id="imp-hint-list" class="import-info hidden" style="margin:8px 0 16px 20px;font-size:0.85rem;line-height:1.6;">
                     <li>👤 <b>META</b> → crea/actualiza personas con datos biograficos</li>
                     <li>👨‍👩‍👧‍👦 <b>FAMILIA</b> → crea personas + vinculos familiares (padres, hijos, conyuge, hermanos)</li>
                     <li>🏢 <b>EMPRESAS</b> → crea empresas + vinculos persona→empresa</li>
@@ -521,7 +443,8 @@ console.log("[BLOCK0] Login script executing");
                     <li>💰 <b>SUELDOS</b> → historial laboral como notas</li>
                     <li>📞 <b>TELEFONOS / CORREOS / VEHICULOS</b> → datos de contacto como notas</li>
                 </ul>
-                <div class="form-group">
+
+                <div id="imp-dropzone-wrap" class="form-group hidden">
                     <label>📂 Arrastra tus archivos HTML aquí o haz clic para seleccionar</label>
                     <div id="li-dropzone" style="border:2px dashed var(--color-border);border-radius:12px;padding:30px;text-align:center;cursor:pointer;margin-bottom:12px;transition:all 0.2s;background:var(--color-bg);"
                          ondragover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-bg-hover)';event.preventDefault();"
@@ -530,20 +453,28 @@ console.log("[BLOCK0] Login script executing");
                          onclick="document.getElementById('li-file-input').click();">
                         <div style="font-size:2rem;margin-bottom:8px;">📁</div>
                         <div style="font-weight:500;color:var(--color-text-secondary);">Suelta tus archivos HTML aquí</div>
-                        <div style="font-size:0.8rem;color:var(--color-text-tertiary);margin-top:4px;">o haz clic para seleccionar (3 archivos HTML)</div>
+                        <div style="font-size:0.8rem;color:var(--color-text-tertiary);margin-top:4px;">o haz clic para seleccionar</div>
                     </div>
                     <input type="file" id="li-file-input" accept=".html,.htm,.txt" multiple style="display:none;" onchange="lederDropFiles(this.files);">
                     <div id="li-file-names" style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:8px;"></div>
                 </div>
-                <div class="form-group">
-                    <label for="li-textarea">O pega el texto manualmente</label>
-                    <textarea id="li-textarea" class="import-textarea" rows="20" placeholder="Pegue aqui el contenido de los archivos HTML exportados de Telegram..."></textarea>
+
+                <div id="imp-etiqueta-wrap" class="form-group">
+                    <label for="imp-etiqueta">🏷 Etiqueta (opcional)</label>
+                    <input type="text" id="imp-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR 2019-2022" style="font-size:0.9rem;padding:8px;">
                 </div>
-                <div id="li-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
+
+                <div class="form-group">
+                    <label for="imp-textarea" id="imp-textarea-label">Datos</label>
+                    <textarea id="imp-textarea" class="import-textarea" rows="15" placeholder="Pegue aquí los datos a importar..."></textarea>
+                </div>
+
+                <div id="imp-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
+
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-importar-leder">Cerrar</button>
-                    <button type="button" id="btn-leder-debug" class="btn btn-outline" onclick="lederDebug()">🔍 Debug</button>
-                    <button type="submit" class="btn btn-primary">Importar LEDER</button>
+                    <button type="button" class="btn btn-ghost" data-close="modal-importar">Cerrar</button>
+                    <button type="button" id="btn-imp-debug" class="btn btn-outline hidden" onclick="lederDebug()">🔍 Debug</button>
+                    <button type="submit" class="btn btn-primary">Importar</button>
                 </div>
             </form>
         </div>
