@@ -122,13 +122,30 @@ def _parsear_nombre_ruc10(texto: str):
 
 
 def _parsear_representante_legal(texto: str):
+    """Parsea columna de representante legal.
+    Formatos soportados:
+      - 'NOMBRE - CARGO - DNI: 12345678'
+      - 'NOMBRE - CARGO'
+      - 'NOMBRE'
+    Retorna (nombre, cargo, dni) donde dni puede ser None.
+    """
     texto = texto.strip()
     if not texto or texto.lower().startswith("no se encontr"):
-        return None, None
+        return None, None, None
+
+    # Extraer DNI si está presente: " - DNI: 12345678" o " DNI: 12345678"
+    dni = None
+    m_dni = re.search(r"\bDNI\s*:\s*(\d{6,20})", texto, re.IGNORECASE)
+    if m_dni:
+        dni = m_dni.group(1)
+        # Limpiar el DNI del texto para no interferir con el parseo nombre/cargo
+        texto = texto[:m_dni.start()].strip()
+        texto = re.sub(r"\s*-\s*$", "", texto).strip()  # quitar trailing " - "
+
     if " - " in texto:
         nombre, cargo = texto.split(" - ", 1)
-        return nombre.strip(), cargo.strip()
-    return texto, "representante legal"
+        return nombre.strip(), cargo.strip(), dni
+    return texto, "representante legal", dni
 
 
 def _buscar_persona_por_nombre(db: Session, nombre_completo: str):
@@ -382,36 +399,39 @@ def _importar_sunat_macro(db: Session, texto: str, etiqueta_id: Optional[int], e
                 _aplicar_campos_sunat(empresa, partes)
 
                 if len(partes) > 19:
-                    rep_nombre, rep_cargo = _parsear_representante_legal(partes[19].strip())
+                    rep_nombre, rep_cargo, rep_dni = _parsear_representante_legal(partes[19].strip())
                     if rep_nombre:
                         empresa.representante_legal_nombre = rep_nombre
-                        empresa.representante_legal_dni = ""
-                        rep_dni_encontrado = False
+                        dni_rep = rep_dni
+                        if not dni_rep:
+                            dni_rep = f"REP-{ruc}"
 
-                        # Buscar persona por nombre completo (ap_paterno + ap_materno + nombres)
-                        nom_rep, ap_p_rep, ap_m_rep = _separar_nombre_completo(rep_nombre)
-                        if ap_p_rep:
-                            rep_existente = _buscar_persona_por_nombre(db, rep_nombre)
-                            if rep_existente:
-                                empresa.representante_legal_dni = rep_existente.dni
-                                rep_dni_encontrado = True
-                                rep_persona = rep_existente
-                            else:
-                                # Crear persona con DNI sintetico
-                                rep_persona, rep_creada = _obtener_o_crear_persona(
-                                    db, f"REP-{ruc}", nom_rep or rep_nombre, ap_p_rep or "PENDIENTE", ap_m_rep,
-                                )
-                                if rep_creada:
-                                    out.personas_creadas += 1
-                                    if _etiquetar_persona(db, rep_persona.id, etiqueta_id):
-                                        out.etiquetados += 1
-                        else:
-                            # No se pudo separar el nombre, crear con DNI sintetico
-                            rep_persona, rep_creada = _obtener_o_crear_persona(
-                                db, f"REP-{ruc}", rep_nombre, "PENDIENTE", None,
-                            )
-                            if rep_creada:
-                                out.personas_creadas += 1
+                            # Buscar persona por nombre completo si no hay DNI en la macro
+                            nom_rep, ap_p_rep, ap_m_rep = _separar_nombre_completo(rep_nombre)
+                            if ap_p_rep:
+                                rep_existente = _buscar_persona_por_nombre(db, rep_nombre)
+                                if rep_existente:
+                                    dni_rep = rep_existente.dni
+
+                        empresa.representante_legal_dni = dni_rep if dni_rep != f"REP-{ruc}" else ""
+
+                        # Crear o buscar persona con el DNI real o sintetico
+                        rep_persona, rep_creada = _obtener_o_crear_persona(
+                            db, dni_rep,
+                            nom_rep if dni_rep.startswith("REP-") else "",
+                            ap_p_rep if dni_rep.startswith("REP-") else "",
+                            ap_m_rep if dni_rep.startswith("REP-") else None,
+                        )
+                        if rep_creada:
+                            # Si se creo con DNI real, los nombres vienen del split
+                            nom_rep, ap_p_rep, ap_m_rep = _separar_nombre_completo(rep_nombre)
+                            if not rep_persona.nombres or rep_persona.nombres == "PENDIENTE":
+                                rep_persona.nombres = nom_rep or rep_nombre
+                                rep_persona.apellido_paterno = ap_p_rep or "PENDIENTE"
+                                rep_persona.apellido_materno = ap_m_rep
+                            out.personas_creadas += 1
+                            if _etiquetar_persona(db, rep_persona.id, etiqueta_id):
+                                out.etiquetados += 1
 
                         cargo_real = rep_cargo or "representante legal"
                         if _vincular_si_no_existe(db, rep_persona.id, empresa.id, cargo_real):
