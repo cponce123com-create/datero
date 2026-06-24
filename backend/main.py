@@ -934,5 +934,6 @@ def api_consultar_ruc(ruc: str = Query(..., min_length=11, max_length=11), user:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/health")
+@app.head("/api/health")
 def health_check():
     return {"status": "ok", "app": "RedCorruptela", "version": "0.3.0"}
