@@ -167,7 +167,8 @@ function rf(d) {
     var p = d.persona, fd = document.getElementById("persona-ficha");
     var fn = p.fecha_nacimiento ? new Date(p.fecha_nacimiento + "T00:00:00").toLocaleDateString("es-PE") : "\u2014";
     var h = "";
-    h += '<div class="ficha-header"><div><div class="ficha-nombre">' + es(p.nombre_completo) + '</div><div class="ficha-dni">DNI: ' + es(p.dni) + '</div><div class="ficha-meta"><span>📅 Nacimiento: ' + fn + '</span>';
+    var avatarUrl = p.foto_url || "https://api.dicebear.com/9.x/avataaars/svg?seed=" + encodeURIComponent(p.dni) + "&backgroundColor=b6e3f4,c0aede,d1d4f9";
+    h += '<div class="ficha-header"><div class="ficha-avatar"><img src="' + avatarUrl + '" alt="Avatar" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--color-primary);background:var(--color-bg);"></div><div><div class="ficha-nombre">' + es(p.nombre_completo) + '</div><div class="ficha-dni">DNI: ' + es(p.dni) + '</div><div class="ficha-meta"><span>📅 Nacimiento: ' + fn + '</span>';
     if (p.foto_url) h += '<span>🖼 <a href="' + es(p.foto_url) + '" target="_blank">Ver foto</a></span>';
     h += '</div></div><div class="ficha-actions"><button class="btn btn-outline btn-sm" onclick="cargarArbol(\x27' + es(p.dni) + '\x27)">🌳 Árbol</button> <button class="btn btn-outline btn-sm" onclick="abrirEtiqueta(\x27' + es(p.dni) + '\x27)">🏷 Etiquetar</button> <button class="btn btn-outline btn-sm" onclick="abrirVincularEmpresa(\x27' + es(p.dni) + '\x27)">🏢 + Empresa</button> <button class="btn btn-outline btn-sm" onclick="editarPersona(\x27' + es(p.dni) + '\x27)">✏️ Editar</button> <button class="btn btn-ghost btn-sm btn-delete-persona" data-dni="' + es(p.dni) + '">🗑 Eliminar</button></div></div><div class="ficha-body">';
     if (p.notas) h += '<div class="ficha-notas">📝 ' + es(p.notas) + '</div>';
