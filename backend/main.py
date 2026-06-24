@@ -649,25 +649,25 @@ def api_importar_leder_telegram(
     result = procesar_texto_leder(db, raw)
 
     partes = []
-    if result.personas_creadas:
-        partes.append(f"{result.personas_creadas} persona(s)")
-    if result.relaciones_creadas:
-        partes.append(f"{result.relaciones_creadas} relacion(es)")
-    if result.empresas_creadas:
-        partes.append(f"{result.empresas_creadas} empresa(s)")
-    if result.vinculos_creados:
-        partes.append(f"{result.vinculos_creados} vinculo(s)")
+    if result.p:
+        partes.append(f"{result.p} persona(s)")
+    if result.r:
+        partes.append(f"{result.r} relacion(es)")
+    if result.e:
+        partes.append(f"{result.e} empresa(s)")
+    if result.v:
+        partes.append(f"{result.v} vinculo(s)")
 
-    errores_str = f" ({len(result.errores)} error(es))" if result.errores else ""
+    errores_str = f" ({len(result.err)} error(es))" if result.err else ""
     mensaje = f"Importacion completada: {', '.join(partes) if partes else 'sin cambios'}{errores_str}"
 
     return {
         "mensaje": mensaje,
-        "personas": result.personas_creadas,
-        "relaciones": result.relaciones_creadas,
-        "empresas": result.empresas_creadas,
-        "vinculos": result.vinculos_creados,
-        "errores": result.errores,
+        "personas": result.p,
+        "relaciones": result.r,
+        "empresas": result.e,
+        "vinculos": result.v,
+        "errores": result.err[:5] if result.err else [],
     }
 
 
