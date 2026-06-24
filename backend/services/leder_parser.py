@@ -694,6 +694,11 @@ def procesar_texto_leder(db: Session, raw: str) -> LederResult:
             continue
 
         try:
+            db.begin_nested()
+        except Exception:
+            pass
+
+        try:
             if tipo == "RENIEC_NOMBRES":
                 dn = _parsear_reniec_nombres(db, bloque, res)
                 if dn:
@@ -737,6 +742,11 @@ def procesar_texto_leder(db: Session, raw: str) -> LederResult:
     try:
         db.commit()
     except Exception as e:
-        res.err.append(f"Error al guardar: {str(e)[:100]}")
+        res.err.append(f"Error al guardar en BD: {str(e)[:100]}")
         db.rollback()
+        # Resetear contadores porque el commit no se completo
+        res.p = 0
+        res.r = 0
+        res.e = 0
+        res.v = 0
     return res
