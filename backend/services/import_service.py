@@ -654,3 +654,323 @@ def ejecutar_importacion(db: Session, datos: ImportarRequest, usuario_id: int, u
     )
     db.commit()
     return resultado
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMPORTADOR INTELIGENTE DE DATOS FAMILIARES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import logging
+from datetime import datetime, timezone
+from typing import List, Dict, Optional
+
+from sqlalchemy.orm import Session
+
+from models import Persona, Relacion
+from utils.validators import validar_relacion, corregir_genero
+from utils.graph_utils import detectar_ciclo
+
+logger = logging.getLogger(__name__)
+
+
+def importar_familiares(
+    db: Session,
+    datos: dict,
+    fuente: str = "IMPORTADOR",
+) -> dict:
+    """
+    Importa una persona y sus familiares desde datos externos.
+
+    ``datos`` espera:
+    {
+        "persona_principal": {
+            "dni": "...", "nombres": "...", "apellido_paterno": "...",
+            "apellido_materno": "...", "genero": "...", "fecha_nac": "YYYY-MM-DD"
+        },
+        "familiares": [
+            {
+                "dni": "...", "nombres": "...", "apellido_paterno": "...",
+                "apellido_materno": "...", "genero": "...", "edad": ...,
+                "tipo": "PADRE|MADRE|HIJO|HIJA|HERMANO|CONYUGE|COMPARTEN_HIJOS|TIO|SOBRINO|PRIMO",
+                "confianza": "ALTA|MEDIA|BAJA"
+            }
+        ]
+    }
+
+    Retorna dict con resultados: creados, actualizados, rechazados, errores.
+    """
+    resultados = {
+        "creados": 0,
+        "actualizados": 0,
+        "rechazados": 0,
+        "errores": [],
+        "observaciones": [],
+    }
+
+    principal_data = datos.get("persona_principal", {})
+    if not principal_data.get("dni"):
+        resultados["errores"].append("DNI de persona principal requerido")
+        return resultados
+
+    # 1. Obtener o crear persona principal
+    principal = _obtener_o_crear_persona(db, principal_data)
+    if not principal:
+        resultados["errores"].append(f"No se pudo crear/obtener {principal_data.get('dni')}")
+        return resultados
+
+    familiares_data = datos.get("familiares", [])
+    if not familiares_data:
+        return resultados
+
+    # 2. Procesar COMPARTEN_HIJOS primero (pueden crear relaciones adicionales)
+    _procesar_comparten_hijos(db, principal, familiares_data, fuente, resultados)
+
+    # 3. Procesar cada familiar
+    for familiar_data in familiares_data:
+        try:
+            _procesar_familiar(db, principal, familiar_data, fuente, resultados)
+        except Exception as e:
+            logger.error(f"Error procesando {familiar_data.get('dni')}: {e}")
+            resultados["errores"].append(
+                f"{familiar_data.get('dni', '?')}: {str(e)[:100]}"
+            )
+
+    db.commit()
+    return resultados
+
+
+def _obtener_o_crear_persona(db: Session, data: dict) -> Optional[Persona]:
+    """Busca persona por DNI; si no existe la crea."""
+    dni = data.get("dni", "").strip()
+    if not dni:
+        return None
+
+    persona = db.query(Persona).filter(Persona.dni == dni).first()
+    if persona:
+        # Actualizar si hay info nueva
+        changed = False
+        for campo in ["nombres", "apellido_paterno", "apellido_materno"]:
+            val = data.get(campo)
+            if val and (getattr(persona, campo) or "") in ("", "PENDIENTE"):
+                setattr(persona, campo, val)
+                changed = True
+        if data.get("genero") and not persona.genero:
+            persona.genero = data["genero"]
+            changed = True
+        if data.get("fecha_nac") and not persona.fecha_nacimiento:
+            from datetime import datetime as dt
+            try:
+                persona.fecha_nacimiento = dt.strptime(data["fecha_nac"], "%Y-%m-%d").date()
+                changed = True
+            except (ValueError, TypeError):
+                pass
+        if changed:
+            db.flush()
+        return persona
+
+    # Crear nueva
+    from datetime import datetime as dt
+    fn = None
+    if data.get("fecha_nac"):
+        try:
+            fn = dt.strptime(data["fecha_nac"], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            pass
+
+    persona = Persona(
+        dni=dni,
+        nombres=data.get("nombres", "PENDIENTE"),
+        apellido_paterno=data.get("apellido_paterno", "PENDIENTE"),
+        apellido_materno=data.get("apellido_materno"),
+        genero=data.get("genero"),
+        fecha_nacimiento=fn,
+    )
+    db.add(persona)
+    db.flush()
+    return persona
+
+
+def _procesar_familiar(
+    db: Session,
+    principal: Persona,
+    familiar_data: dict,
+    fuente: str,
+    resultados: dict,
+):
+    """Procesa un familiar individual."""
+    dni = familiar_data.get("dni", "").strip()
+    if not dni:
+        return
+
+    # Obtener o crear familiar
+    familiar = _obtener_o_crear_persona(db, familiar_data)
+    if not familiar:
+        return
+
+    tipo = familiar_data.get("tipo", "").lower().strip()
+
+    # COMPARTEN_HIJOS ya se proceso arriba
+    if tipo == "comparten_hijos":
+        return
+
+    # Validar relacion
+    valida, tipo_final, obs = validar_relacion(principal, familiar, tipo)
+    if not valida:
+        resultados["rechazados"] += 1
+        if obs:
+            resultados["observaciones"].append(
+                f"{principal.dni} -{tipo}-> {dni}: {obs}"
+            )
+        return
+
+    if obs:
+        resultados["observaciones"].append(
+            f"{principal.dni} -{tipo_final}-> {dni}: {obs}"
+        )
+
+    # Detectar ciclo
+    if detectar_ciclo(db, principal.id, familiar.id):
+        resultados["rechazados"] += 1
+        resultados["observaciones"].append(
+            f"{principal.dni} -{tipo_final}-> {dni}: CICLO DETECTADO"
+        )
+        return
+
+    # Crear relacion
+    confianza = familiar_data.get("confianza", "MEDIA").upper()
+    if confianza not in ("ALTA", "MEDIA", "BAJA"):
+        confianza = "MEDIA"
+
+    _crear_relacion_segura(db, principal, familiar, tipo_final, confianza, fuente, resultados)
+
+
+def _procesar_comparten_hijos(
+    db: Session,
+    principal: Persona,
+    familiares: List[dict],
+    fuente: str,
+    resultados: dict,
+):
+    """
+    Procesa relaciones COMPARTEN_HIJOS.
+
+    NO crea relación directa entre los adultos.
+    Busca un HIJO/HIJA en comun en la lista de familiares.
+    Si lo encuentra, crea PADRE/MADRE desde cada adulto hacia el hijo.
+    """
+    # Identificar adultos que COMPARTEN_HIJOS con el principal
+    compartentes = [
+        f for f in familiares
+        if f.get("tipo", "").strip().upper() == "COMPARTEN_HIJOS"
+    ]
+    if not compartentes:
+        return
+
+    # Buscar hijos en la lista
+    hijos = [
+        f for f in familiares
+        if f.get("tipo", "").strip().upper() in ("HIJO", "HIJA")
+    ]
+    if not hijos:
+        resultados["observaciones"].append(
+            f"{principal.dni}: COMPARTEN_HIJOS sin hijo declarado, se ignora"
+        )
+        return
+
+    # Crear vinculos padre/madre hacia cada hijo
+    for adulto_data in [{"dni": principal.dni, "genero": principal.genero}] + [
+        {"dni": f["dni"], "genero": _inferir_genero_por_dni(db, f.get("dni", ""))}
+        for f in compartentes
+    ]:
+        if not adulto_data.get("dni"):
+            continue
+        adulto = db.query(Persona).filter(Persona.dni == adulto_data["dni"]).first()
+        if not adulto:
+            continue
+
+        for hijo_data in hijos:
+            hijo = db.query(Persona).filter(Persona.dni == hijo_data.get("dni", "")).first()
+            if not hijo or hijo.id == adulto.id:
+                continue
+
+            tipo = "padre" if adulto.genero == "MASCULINO" else "madre"
+            confianza = hijo_data.get("confianza", "MEDIA").upper()
+            if confianza not in ("ALTA", "MEDIA", "BAJA"):
+                confianza = "MEDIA"
+
+            _crear_relacion_segura(db, adulto, hijo, tipo, confianza, fuente, resultados)
+
+
+def _inferir_genero_por_dni(db: Session, dni: str) -> Optional[str]:
+    """Obtiene el genero de una persona por DNI."""
+    p = db.query(Persona).filter(Persona.dni == dni).first()
+    return p.genero if p else None
+
+
+def _crear_relacion_segura(
+    db: Session,
+    origen: Persona,
+    destino: Persona,
+    tipo: str,
+    confianza: str,
+    fuente: str,
+    resultados: dict,
+):
+    """Crea o actualiza una relacion validando duplicados."""
+    if origen.id == destino.id:
+        return
+
+    # Verificar duplicado exacto
+    existente = db.query(Relacion).filter(
+        Relacion.persona_origen_id == origen.id,
+        Relacion.persona_destino_id == destino.id,
+        Relacion.tipo_relacion == tipo,
+    ).first()
+
+    if existente:
+        if confianza == "ALTA" and existente.confianza != "ALTA":
+            existente.confianza = confianza
+            existente.fuente = fuente
+            resultados["actualizados"] += 1
+        return
+
+    # Crear relacion
+    nueva = Relacion(
+        persona_origen_id=origen.id,
+        persona_destino_id=destino.id,
+        tipo_relacion=tipo,
+        certeza=confianza,
+        confianza=confianza,
+        fuente=fuente,
+        fecha_importacion=datetime.now(timezone.utc),
+    )
+    db.add(nueva)
+    db.flush()
+    resultados["creados"] += 1
+
+    # Crear inversa si aplica
+    _INVERSO = {
+        "padre": "hijo", "madre": "hija",
+        "hijo": "padre", "hija": "madre",
+        "hermano": "hermano", "hermana": "hermana",
+        "conyuge": "conyuge",
+    }
+    tipo_inverso = _INVERSO.get(tipo)
+    if tipo_inverso:
+        inv_existente = db.query(Relacion).filter(
+            Relacion.persona_origen_id == destino.id,
+            Relacion.persona_destino_id == origen.id,
+            Relacion.tipo_relacion == tipo_inverso,
+        ).first()
+        if not inv_existente:
+            inv = Relacion(
+                persona_origen_id=destino.id,
+                persona_destino_id=origen.id,
+                tipo_relacion=tipo_inverso,
+                certeza=confianza,
+                confianza=confianza,
+                fuente=fuente,
+                fecha_importacion=datetime.now(timezone.utc),
+            )
+            db.add(inv)
+            db.flush()
+            resultados["creados"] += 1

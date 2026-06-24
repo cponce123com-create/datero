@@ -125,6 +125,15 @@ class Relacion(Base):
         comment="confirmado | rumor | documento"
     )
     notas = Column(Text, nullable=True)
+    confianza = Column(
+        String(10), default="confirmado",
+        comment="ALTA | MEDIA | BAJA. Nivel de confianza de la fuente"
+    )
+    fuente = Column(
+        String(50), nullable=True,
+        comment="LEDER_BOT | RENIEC | IMPORTADOR | MANUAL"
+    )
+    fecha_importacion = Column(DateTime(timezone=True), nullable=True)
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
 
     origen = relationship(
