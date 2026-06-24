@@ -173,14 +173,12 @@ async function cf(dni) {
     content.innerHTML = '<div class="loading-text" style="padding:40px;text-align:center;"><span class="spinner"></span> Cargando...</div>';
     try {
         var d = await af(A + "/personas/" + dni);
-        // Guardar referencia para rf()
         window._fichaData = d;
         rf(d);
-        // Mover el HTML generado por rf() al modal
         var fd = document.getElementById("persona-ficha");
         if (fd && fd.innerHTML) {
             content.innerHTML = fd.innerHTML;
-            // Re-aplicar eventos
+            fd.innerHTML = ""; // Limpiar para que no se vea debajo del modal
             _aplicarEventosFicha(content, d);
         }
     } catch (err) {
