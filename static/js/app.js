@@ -288,14 +288,14 @@ document.addEventListener("DOMContentLoaded", function(){
             if (view === "personas") {
                 setTimeout(function(){
                     var si = document.getElementById("search-input");
-                    if (si && !si.value.trim()) { si.value = "a"; document.getElementById("search-btn").click(); si.value = ""; }
-                }, 200);
+                    if (si) si.focus();
+                }, 300);
             }
             if (view === "empresas") {
                 setTimeout(function(){
                     var esi = document.getElementById("search-empresa-input");
-                    if (esi && !esi.value.trim()) { esi.value = "a"; document.getElementById("search-empresa-btn").click(); esi.value = ""; }
-                }, 200);
+                    if (esi) esi.focus();
+                }, 300);
             }
         });
     });
