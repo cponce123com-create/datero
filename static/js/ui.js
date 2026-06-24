@@ -719,6 +719,36 @@ document.getElementById("form-importar-empresas").addEventListener("submit", asy
 });
 
 /* ─── LEDER Telegram Import ─── */
+window.lederDebug = async function() {
+    var raw = document.getElementById("li-textarea").value.trim();
+    if (!raw) { st("Pega o arrastra archivos primero", "error"); return; }
+    try {
+        var r = await af(A + "/importar/leder-debug", { method: "POST", body: JSON.stringify({ texto: raw }) });
+        var div = document.getElementById("li-resultado");
+        div.classList.remove("hidden");
+        div.style.background = "#f8fafc";
+        div.style.border = "1px solid #94a3b8";
+        var html = "<strong>🔍 Debug - " + r.total_partes + " partes, " + r.partes_procesables + " procesables</strong>";
+        html += '<pre style="font-size:0.75rem;max-height:200px;overflow:auto;margin-top:8px;padding:8px;background:#1e293b;color:#e2e8f0;border-radius:6px;">' + es(r.primeros_300_chars) + '</pre>';
+        if (r.partes && r.partes.length > 0) {
+            html += '<div style="margin-top:8px;font-size:0.8rem;">';
+            r.partes.forEach(function(p) {
+                var color = p.tipo ? "#16a34a" : "#94a3b8";
+                html += '<div style="padding:4px 0;border-bottom:1px solid #e2e8f0;"><span style="color:' + color + ';font-weight:500;">#' + p.idx + '</span> ';
+                html += '<span style="color:' + color + ';">' + (p.tipo || "sin tipo") + '</span> ';
+                if (p.dni) html += '<span style="color:#2563eb;">DNI:' + p.dni + '</span> ';
+                html += '<span style="color:#64748b;">' + p.len + 'ch</span> ';
+                if (p.bloques_personas > 0) html += '<span style="color:#9333ea;">' + p.bloques_personas + ' pers</span> ';
+                html += '</div>';
+            });
+            html += '</div>';
+        } else {
+            html += '<div style="margin-top:8px;color:#dc2626;">⚠ No se detectaron partes con [#LEDER_BOT]. El texto no tiene el formato esperado.</div>';
+        }
+        div.innerHTML = html;
+    } catch (err) { st(err.message, "error"); }
+};
+
 window.lederDropFiles = function(files) {
     if (!files || files.length === 0) return;
     var ta = document.getElementById("li-textarea");

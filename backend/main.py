@@ -643,6 +643,41 @@ def _ejecutar_enriquecimiento(user_id: int, user_username: str):
 # LEDER DATA TELEGRAM IMPORT
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@app.post("/api/importar/leder-debug")
+def api_leder_debug(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Debug: muestra como se ve el texto despues de procesar."""
+    raw = body.get("texto", "")
+    from services.leder_parser import _strip_html, _detectar_tipo, _es_continuacion, _dni_limpio, _bloques_personas, _campo
+    import re
+    limpio = _strip_html(raw)
+    limpio = limpio.replace("\r\n", "\n").replace("\r", "\n")
+    partes = re.split(r"(?=\[#LEDER_BOT\])", limpio)
+    info = []
+    for i, p in enumerate(partes):
+        p = p.strip()
+        if len(p) < 10: continue
+        tipo = _detectar_tipo(p)
+        cont = _es_continuacion(p)
+        dni = _dni_limpio(p)
+        blqs = len(_bloques_personas(p))
+        info.append({
+            "idx": i, "len": len(p), "tipo": tipo,
+            "continuacion": cont, "dni": dni,
+            "bloques_personas": blqs,
+            "preview": p[:120],
+        })
+    return {
+        "total_partes": len(partes),
+        "partes_procesables": len(info),
+        "primeros_300_chars": limpio[:300],
+        "partes": info[:20],
+    }
+
+
 @app.post("/api/importar/leder-telegram", status_code=status.HTTP_201_CREATED)
 def api_importar_leder_telegram(
     body: dict = Body(...),
