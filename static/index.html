@@ -25,6 +25,9 @@
                 <button type="submit" id="login-btn" class="btn btn-primary" style="width:100%;margin-top:8px;">Ingresar</button>
             </form>
             <script>
+console.log("[BLOCK0] Login script executing");
+// ─── Login handler inline (ejecuta INMEDIATAMENTE) ───
+
             // ─── Login handler inline (ejecuta INMEDIATAMENTE) ───
             (function(){
                 var q = new URLSearchParams(window.location.search);
@@ -587,10 +590,14 @@
     <!-- ═══ TOAST ═══ -->
     <div id="toast" class="toast hidden"></div>
 
-    <script>// ─── state.js (inline) ───
+    <script>
+    console.log("[BLOCK2] state.js+api.js starting");
+// ─── state.js (inline) ───
     var AppState={_listeners:[],_state:{editandoDni:null,editandoEmpresaRuc:null,searchTimer:null,empresaSearchTimer:null,toastTimer:null},get:function(k){return this._state[k]},set:function(k,v){this._state[k]=v;this._notify(k,v)},on:function(cb){this._listeners.push(cb)},_notify:function(k,v){this._listeners.forEach(function(cb){cb(k,v)})}};
     // ─── api.js (inline) ───
-    var A="/api";function getAuth(){return sessionStorage.getItem("rc_token")}function setAuth(t,u,r){sessionStorage.setItem("rc_token",t);if(u)sessionStorage.setItem("rc_user",u);if(r)sessionStorage.setItem("rc_rol",r)}function logout(){sessionStorage.clear();location.reload()}function esAdmin(){return sessionStorage.getItem("rc_rol")==="admin"}function _redirectLogin(){sessionStorage.clear();var e=document.getElementById("login-overlay");if(e)e.classList.remove("hidden")}async function af(url,o){o=o||{};var token=getAuth();if(!token){_redirectLogin();throw new Error("Sin sesion")}var h={Authorization:"Bearer "+token,"Content-Type":"application/json"};if(o.headers)Object.assign(h,o.headers);var r=await fetch(url,{method:o.method,headers:h,body:o.body});if(r.status===401){_redirectLogin();throw new Error("Sesion expirada")}if(!r.ok){var d=await r.json().catch(function(){return{}});throw new Error(d.detail||"Error "+r.status)}if(r.status===204)return null;return r.json()}</script>
+    var A="/api";function getAuth(){return sessionStorage.getItem("rc_token")}function setAuth(t,u,r){sessionStorage.setItem("rc_token",t);if(u)sessionStorage.setItem("rc_user",u);if(r)sessionStorage.setItem("rc_rol",r)}function logout(){sessionStorage.clear();location.reload()}function esAdmin(){return sessionStorage.getItem("rc_rol")==="admin"}function _redirectLogin(){sessionStorage.clear();var e=document.getElementById("login-overlay");if(e)e.classList.remove("hidden")}async function af(url,o){o=o||{};var token=getAuth();if(!token){_redirectLogin();throw new Error("Sin sesion")}var h={Authorization:"Bearer "+token,"Content-Type":"application/json"};if(o.headers)Object.assign(h,o.headers);var r=await fetch(url,{method:o.method,headers:h,body:o.body});if(r.status===401){_redirectLogin();throw new Error("Sesion expirada")}if(!r.ok){var d=await r.json().catch(function(){return{}});throw new Error(d.detail||"Error "+r.status)}if(r.status===204)return null;return r.json()}
+    console.log("[BLOCK2] state.js+api.js completed");
+</script>
 <script>console.log("TEST: Bundle script block starting");</script>
 <script>// ─── ui.js + app.js (try/catch global) ───
     try {
