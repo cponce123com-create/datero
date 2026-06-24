@@ -314,20 +314,10 @@ async function cargarKPIs() {
             af(A + "/db/todas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
             af(A + "/etiquetas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
         ]);
-        // Relaciones usa /api/stats silenciosamente
-        var r = "—";
-        try {
-            var token = getAuth();
-            if (token) {
-                var resp = await fetch("/api/stats", { headers: { Authorization: "Bearer " + token } });
-                if (resp.ok) { var d = await resp.json(); r = d.total_relaciones || "—"; }
-            }
-        } catch(e) {}
         var el1 = document.getElementById("kpi-personas"); if (el1) el1.textContent = p;
         var el2 = document.getElementById("kpi-empresas"); if (el2) el2.textContent = e;
-        var el3 = document.getElementById("kpi-relaciones"); if (el3) el3.textContent = r;
         var el4 = document.getElementById("kpi-etiquetas"); if (el4) el4.textContent = et;
-    } catch(ex) { console.warn("KPI error:", ex); }
+    } catch(ex) {}
 }
 
 /* ─── Re-export functions that ui.js calls ─── */
