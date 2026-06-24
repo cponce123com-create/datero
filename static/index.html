@@ -592,7 +592,9 @@
     var AppState={_listeners:[],_state:{editandoDni:null,editandoEmpresaRuc:null,searchTimer:null,empresaSearchTimer:null,toastTimer:null},get:function(k){return this._state[k]},set:function(k,v){this._state[k]=v;this._notify(k,v)},on:function(cb){this._listeners.push(cb)},_notify:function(k,v){this._listeners.forEach(function(cb){cb(k,v)})}};
     // ─── api.js (inline) ───
     var A="/api";function getAuth(){return sessionStorage.getItem("rc_token")}function setAuth(t,u,r){sessionStorage.setItem("rc_token",t);if(u)sessionStorage.setItem("rc_user",u);if(r)sessionStorage.setItem("rc_rol",r)}function logout(){sessionStorage.clear();location.reload()}function esAdmin(){return sessionStorage.getItem("rc_rol")==="admin"}function _redirectLogin(){sessionStorage.clear();var e=document.getElementById("login-overlay");if(e)e.classList.remove("hidden")}async function af(url,o){o=o||{};var token=getAuth();if(!token){_redirectLogin();throw new Error("Sin sesion")}var h={Authorization:"Bearer "+token,"Content-Type":"application/json"};if(o.headers)Object.assign(h,o.headers);var r=await fetch(url,{method:o.method,headers:h,body:o.body});if(r.status===401){_redirectLogin();throw new Error("Sesion expirada")}if(!r.ok){var d=await r.json().catch(function(){return{}});throw new Error(d.detail||"Error "+r.status)}if(r.status===204)return null;return r.json()}
-    // ─── ui.js + app.js (inline bundle) ───
+    
+    // ─── ui.js + app.js (try/catch global) ───
+    try {
 /**
  * ui.js — Funciones de renderizado y manejo del DOM.
  * 
@@ -1568,7 +1570,14 @@ function hl() { var e = document.getElementById("login-overlay"); if (e) e.class
 
 /* ─── Start ─── */
 if (getAuth()) { hl(); _init(); } else { sl(); }
-
-    </script>
+    console.log("[BUNDLE] ui.js+app.js loaded successfully. Buttons check:");
+["btn-nueva-persona","btn-nueva-relacion","btn-nueva-empresa","btn-visorbd","btn-visorempresas"].forEach(function(id){
+    var el = document.getElementById(id);
+    console.log("  " + id + ": " + (el ? "exists" : "MISSING"));
+});
+} catch(e) {
+        console.error("[APP FATAL]", e.message, e.stack);
+    }
+</script>
 </body>
 </html>
