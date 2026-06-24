@@ -592,17 +592,26 @@
     var AppState={_listeners:[],_state:{editandoDni:null,editandoEmpresaRuc:null,searchTimer:null,empresaSearchTimer:null,toastTimer:null},get:function(k){return this._state[k]},set:function(k,v){this._state[k]=v;this._notify(k,v)},on:function(cb){this._listeners.push(cb)},_notify:function(k,v){this._listeners.forEach(function(cb){cb(k,v)})}};
     // ─── api.js (inline) ───
     var A="/api";function getAuth(){return sessionStorage.getItem("rc_token")}function setAuth(t,u,r){sessionStorage.setItem("rc_token",t);if(u)sessionStorage.setItem("rc_user",u);if(r)sessionStorage.setItem("rc_rol",r)}function logout(){sessionStorage.clear();location.reload()}function esAdmin(){return sessionStorage.getItem("rc_rol")==="admin"}function _redirectLogin(){sessionStorage.clear();var e=document.getElementById("login-overlay");if(e)e.classList.remove("hidden")}async function af(url,o){o=o||{};var token=getAuth();if(!token){_redirectLogin();throw new Error("Sin sesion")}var h={Authorization:"Bearer "+token,"Content-Type":"application/json"};if(o.headers)Object.assign(h,o.headers);var r=await fetch(url,{method:o.method,headers:h,body:o.body});if(r.status===401){_redirectLogin();throw new Error("Sesion expirada")}if(!r.ok){var d=await r.json().catch(function(){return{}});throw new Error(d.detail||"Error "+r.status)}if(r.status===204)return null;return r.json()}
-    // ─── Cargar scripts restantes con deteccion de error ───
+    // ─── Cargar scripts via Blob URL (evita cache/mime issues) ───
     (function(){
         var scripts=["/static/js/ui.js","/static/js/app.js"];
         function loadNext(){
             if(!scripts.length) return;
             var url=scripts.shift();
-            var s=document.createElement("script");
-            s.src=url;
-            s.onload=function(){console.log("Cargado: "+url);loadNext()};
-            s.onerror=function(){console.error("FALLO CARGA: "+url);loadNext()};
-            document.body.appendChild(s);
+            fetch(url+"?_="+Date.now()).then(function(r){
+                if(!r.ok) throw new Error("HTTP "+r.status);
+                return r.text();
+            }).then(function(code){
+                var blob=new Blob([code],{type:"text/javascript"});
+                var s=document.createElement("script");
+                s.src=URL.createObjectURL(blob);
+                s.onload=function(){console.log("OK: "+url);loadNext()};
+                s.onerror=function(){console.error("ERROR: "+url);loadNext()};
+                document.body.appendChild(s);
+            }).catch(function(err){
+                console.error("FAIL: "+url+" - "+err.message);
+                loadNext();
+            });
         }
         loadNext();
     })();
