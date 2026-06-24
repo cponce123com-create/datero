@@ -289,6 +289,7 @@ def _importar_sunat_macro(db: Session, texto: str, etiqueta_id: Optional[int], e
     inicio = 1 if tiene_header else 0
 
     out = ImportOut(mensaje="")
+    commit_cada = 50
     for i in range(inicio, len(lineas)):
         partes = lineas[i].split("\t")
         if len(partes) < 2:
@@ -297,6 +298,12 @@ def _importar_sunat_macro(db: Session, texto: str, etiqueta_id: Optional[int], e
         if len(ruc) != 11 or not ruc.isdigit():
             out.errores.append(f"Linea {i + 1}: RUC invalido '{ruc}'")
             continue
+
+        # Commit periódico cada N RUCs para mantener la conexión activa
+        # y evitar errores 7s2a (DisconnectionError) por transacciones largas
+        if (i - inicio) > 0 and (i - inicio) % commit_cada == 0:
+            db.flush()
+            db.commit()
 
         out.total_procesadas += 1
         try:
