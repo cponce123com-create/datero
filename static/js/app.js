@@ -251,3 +251,104 @@ if (savedToken) {
         _init();
     }
 }
+
+/* ─── New Layout Navigation ─── */
+document.addEventListener("DOMContentLoaded", function(){
+    // Sidebar toggle
+    var st = document.getElementById("sidebar-toggle");
+    if (st) st.addEventListener("click", function(){
+        document.getElementById("sidebar").classList.toggle("collapsed");
+    });
+
+    // Navigation
+    document.querySelectorAll(".sidebar-link[data-view]").forEach(function(btn){
+        btn.addEventListener("click", function(){
+            var view = btn.dataset.view;
+            document.querySelectorAll(".sidebar-link[data-view]").forEach(function(b){ b.classList.remove("active"); });
+            btn.classList.add("active");
+            document.querySelectorAll(".view").forEach(function(v){ v.classList.remove("active"); });
+            var target = document.getElementById("view-" + view);
+            if (target) target.classList.add("active");
+            // Load dynamic content if needed
+            if (view === "etiquetas") cargarListaEtiquetas();
+            if (view === "dashboard") cargarDashboard();
+        });
+    });
+
+    // Topbar search focus shortcut
+    var ts = document.getElementById("topbar-search-input");
+    if (ts) {
+        ts.addEventListener("keydown", function(e){
+            if (e.key === "Enter" && this.value.trim()) {
+                // Switch to personas view and search
+                var q = this.value.trim();
+                document.querySelector('.sidebar-link[data-view="personas"]').click();
+                var si = document.getElementById("search-input");
+                if (si) { si.value = q; buscarPersonas(); }
+            }
+        });
+    }
+});
+
+/* ─── Override hl() and sl() ─── */
+var _origHl2 = window.hl;
+window.hl = function() {
+    if (_origHl2) _origHl2();
+    var w = document.getElementById("app-wrapper");
+    if (w) w.style.display = "flex";
+    // Update sidebar user
+    try {
+        var u = sessionStorage.getItem("rc_user") || "Admin";
+        var r = sessionStorage.getItem("rc_rol") || "admin";
+        var av = document.getElementById("sidebar-user-avatar");
+        if (av) av.textContent = u.charAt(0).toUpperCase();
+        var un = document.getElementById("sidebar-user-name");
+        if (un) un.textContent = u;
+        var ur = document.getElementById("sidebar-user-rol");
+        if (ur) ur.textContent = r;
+    } catch(e){}
+    // Load stats
+    setTimeout(cargarKPIs, 300);
+};
+
+var _origSl2 = window.sl;
+window.sl = function() {
+    if (_origSl2) _origSl2();
+    var w = document.getElementById("app-wrapper");
+    if (w) w.style.display = "none";
+};
+
+/* ─── KPI Loader ─── */
+async function cargarKPIs() {
+    try {
+        var s = await af(A + "/stats");
+        if (!s) return;
+        var ids = {personas:"kpi-personas", empresas:"kpi-empresas", relaciones:"kpi-relaciones", etiquetas:"kpi-etiquetas"};
+        var map = {
+            "total_personas": "personas", "total_empresas": "empresas",
+            "total_relaciones": "relaciones", "total_persona_empresa": "etiquetas"
+        };
+        for (var k in map) {
+            var v = s[k];
+            if (v !== undefined) {
+                var el = document.getElementById(ids[map[k]]);
+                if (el) el.textContent = v;
+            }
+        }
+        // Also try total_etiquetas directly
+        if (s.total_etiquetas !== undefined) {
+            var el = document.getElementById("kpi-etiquetas");
+            if (el) el.textContent = s.total_etiquetas;
+        }
+    } catch(e) { console.warn("KPI error:", e); }
+}
+
+/* ─── Re-export functions that ui.js calls ─── */
+function abrirModalPersona() { om("modal-persona"); }
+function abrirModalImportar() { om("modal-importar"); }
+function toggleDarkMode() {
+    var html = document.documentElement;
+    var t = html.getAttribute("data-theme");
+    html.setAttribute("data-theme", t === "dark" ? "light" : "dark");
+    localStorage.setItem("rc_theme", t === "dark" ? "light" : "dark");
+}

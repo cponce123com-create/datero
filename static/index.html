@@ -3,640 +3,670 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RedCorruptela — Detección de Redes de Corrupción</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <title>RedCorruptela — Inteligencia para periodistas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/family-chart@0.9.0/dist/family-chart.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/family-chart@0.9.0/dist/family-chart.css">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-    <!-- ═══ LOGIN OVERLAY ═══ -->
-    <div id="login-overlay" class="login-overlay">
-        <div class="login-card">
-            <h2>🔐 RedCorruptela</h2>
-            <p>Ingrese sus credenciales para acceder</p>
-            <form id="form-login" action="/api/auth/login-form" method="post">
-                <div class="form-group">
-                    <label for="login-user">Usuario</label>
-                    <input type="text" id="login-user" name="username" required autocomplete="username" placeholder="usuario">
-                </div>
-                <div class="form-group">
-                    <label for="login-pass">Contraseña</label>
-                    <input type="password" id="login-pass" name="password" required autocomplete="current-password" placeholder="····">
-                </div>
-                <button type="submit" id="login-btn" class="btn btn-primary" style="width:100%;margin-top:8px;">Ingresar</button>
-            </form>
-            <script>
-console.log("[BLOCK0] Login script executing");
-(function(){
-    var q = new URLSearchParams(window.location.search);
-    var t = q.get("token"), u = q.get("user"), r = q.get("rol"), e = q.get("error");
-    if (t) {
-        sessionStorage.setItem("rc_token", t);
-        if (u) sessionStorage.setItem("rc_user", u);
-        if (r) sessionStorage.setItem("rc_rol", r);
-        window.history.replaceState({}, "", "/");
-        var o = document.getElementById("login-overlay");
-        if (o) o.classList.add("hidden");
-    }
-    if (e) {
-        alert("Usuario o contraseña incorrectos");
-        window.history.replaceState({}, "", "/");
-    }
-})();
-</script>
-        </div>
+<!-- ═══ LOGIN OVERLAY ═══ -->
+<div id="login-overlay" class="login-overlay">
+    <div class="login-card">
+        <h2>🕸️ RedCorruptela</h2>
+        <p>Inteligencia para periodistas de investigacion</p>
+        <form id="form-login" action="/api/auth/login-form" method="post">
+            <div class="form-group">
+                <label for="login-user">Usuario</label>
+                <input type="text" id="login-user" name="username" required autocomplete="username" placeholder="usuario">
+            </div>
+            <div class="form-group">
+                <label for="login-pass">Contrasena</label>
+                <input type="password" id="login-pass" name="password" required autocomplete="current-password" placeholder="····">
+            </div>
+            <button type="submit" id="login-btn" class="btn btn-primary" style="width:100%;margin-top:8px;">Ingresar</button>
+        </form>
+        <script>
+        (function(){
+            var q=new URLSearchParams(window.location.search);
+            var t=q.get("token"),u=q.get("user"),r=q.get("rol"),e=q.get("error");
+            if(t){sessionStorage.setItem("rc_token",t);if(u)sessionStorage.setItem("rc_user",u);if(r)sessionStorage.setItem("rc_rol",r);
+            window.history.replaceState({},"","/");
+            var o=document.getElementById("login-overlay");if(o)o.classList.add("hidden");}
+            if(e){alert("Usuario o contrasena incorrectos");window.history.replaceState({},"","/");}
+        })();
+        </script>
     </div>
+</div>
 
-    <!-- ═══ CABECERA ═══ -->
-    <header class="header">
-        <div class="header-inner">
-            <h1 class="logo">
-                <span class="logo-icon">🔍</span>
-                Red<span class="logo-highlight">Corruptela</span>
-            </h1>
-            <nav class="header-actions">
-                <button id="theme-toggle" class="theme-toggle" onclick="toggleDarkMode()" title="Modo oscuro">🌙</button>
-                <button id="btn-nueva-persona" class="btn btn-primary btn-sm">+ Persona</button>
-                <button id="btn-nueva-relacion" class="btn btn-outline btn-sm">+ Relación</button>
-                <button id="btn-nueva-empresa" class="btn btn-outline btn-sm">🏢 + Empresa</button>
-                <button id="btn-etiquetas" class="btn btn-outline btn-sm">🏷 Etiquetas</button>
-                <button id="btn-visorbd" class="btn btn-outline btn-sm">📊 BD</button>
-                <button id="btn-visorempresas" class="btn btn-outline btn-sm">🏢 Empresas</button>
-                <button id="btn-importar" class="btn btn-primary btn-sm">📥 Importar</button>
-                <button id="btn-reset" class="btn btn-danger btn-sm" style="background:#dc2626;color:#fff;border:none;">🗑 Reset</button>
-                <button id="btn-dashboard" class="btn btn-primary btn-sm">📊 Dashboard</button>
-            </nav>
-        </div>
-    </header>
+<!-- ═══ APP WRAPPER ═══ -->
+<div id="app-wrapper" style="display:none;">
 
-    <!-- ═══ HERO ═══ -->
-    <section class="hero" id="hero-section">
-        <div class="hero-content">
-            <span class="hero-badge">🔍 Investigación Periodística</span>
-            <h1>Red <span class="highlight">Corruptela</span></h1>
-            <p class="hero-subtitle">
-                Inteligencia para periodistas de investigación.<br>
-                Construye tu base de datos de personas, empresas y relaciones.<br>
-                Detecta patrones de corrupción y favoritismo político.
-            </p>
-            <div class="hero-actions">
-                <button class="btn btn-primary btn-lg" onclick="document.getElementById('search-input').focus()">🔍 Explorar base de datos</button>
-                <button class="btn btn-outline btn-lg" onclick="cargarDashboard()">📊 Ver dashboard</button>
+    <!-- ═══ SIDEBAR ═══ -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            <div class="sidebar-logo-icon"><i class="fas fa-search"></i></div>
+            <div>
+                <div class="sidebar-logo-text">Red<span>Corruptela</span></div>
+                <div class="sidebar-logo-sub">Inteligencia para periodistas</div>
             </div>
         </div>
-    </section>
-
-    <!-- ═══ STATS ═══ -->
-    <section class="stats" id="stats-section">
-        <div class="stat-card">
-            <span class="stat-icon">👥</span>
-            <div><span class="stat-number" id="totalPersonas">—</span><span class="stat-label">Personas</span></div>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">🏢</span>
-            <div><span class="stat-number" id="totalEmpresas">—</span><span class="stat-label">Empresas</span></div>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">🔗</span>
-            <div><span class="stat-number" id="totalRelaciones">—</span><span class="stat-label">Relaciones</span></div>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">🏷️</span>
-            <div><span class="stat-number" id="totalEtiquetas">—</span><span class="stat-label">Etiquetas</span></div>
-        </div>
-    </section>
-
-    <!-- ═══ FEATURES ═══ -->
-    <section class="features" id="features-section">
-        <h2 class="section-title">¿Qué puedes hacer con Red Corruptela?</h2>
-        <div class="features-grid">
-            <div class="feature-card">
-                <div class="feature-icon">👤</div>
-                <h3>Base de datos de personas</h3>
-                <p>Registra personas con DNI, nombres, fechas y fotos. Busca por cualquier campo con autocompletado.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🧬</div>
-                <h3>Parentescos automáticos</h3>
-                <p>El sistema deduce abuelos, tíos, cuñados, primos y suegros a partir de las relaciones registradas.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🏢</div>
-                <h3>Empresas y vínculos</h3>
-                <p>Registra empresas con RUC, datos SUNAT y vincula personas con cargos específicos.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🏷️</div>
-                <h3>Etiquetas y filtros</h3>
-                <p>Marca personas y empresas con etiquetas como "contratado 2024" o "proveedor municipalidad".</p>
+        <nav class="sidebar-nav">
+            <div class="sidebar-section-title">Navegacion</div>
+            <button class="sidebar-link active" data-view="home"><i class="fas fa-home"></i><span>Inicio</span></button>
+            <button class="sidebar-link" data-view="personas"><i class="fas fa-user"></i><span>Personas</span></button>
+            <button class="sidebar-link" data-view="empresas"><i class="fas fa-building"></i><span>Empresas</span></button>
+            <button class="sidebar-link" data-view="relaciones"><i class="fas fa-link"></i><span>Relaciones</span></button>
+            <button class="sidebar-link" data-view="etiquetas"><i class="fas fa-tags"></i><span>Etiquetas</span></button>
+            <div class="sidebar-section-title">Datos</div>
+            <button class="sidebar-link" data-view="importar"><i class="fas fa-upload"></i><span>Importaciones</span></button>
+            <button class="sidebar-link" data-view="dashboard"><i class="fas fa-chart-bar"></i><span>Dashboard</span></button>
+            <button class="sidebar-link" data-view="reportes"><i class="fas fa-file-alt"></i><span>Reportes</span></button>
+            <div class="sidebar-section-title">Sistema</div>
+            <button class="sidebar-link" onclick="toggleDarkMode()"><i class="fas fa-palette"></i><span>Tema</span></button>
+            <button class="sidebar-link" onclick="sessionStorage.clear();location.reload()"><i class="fas fa-sign-out-alt"></i><span>Salir</span></button>
+        </nav>
+        <div class="sidebar-user">
+            <div class="user-avatar" id="sidebar-user-avatar">A</div>
+            <div class="user-info">
+                <div class="user-name" id="sidebar-user-name">Admin</div>
+                <div class="user-rol" id="sidebar-user-rol">admin</div>
             </div>
         </div>
-    </section>
+    </aside>
 
-    <!-- ═══ GRAPH ═══ -->
-    <section class="graph-section">
-        <div class="graph-header">
-            <h2><i class="fas fa-network-wired"></i> Mapa de relaciones recientes</h2>
-            <span class="graph-hint">Arrastra los nodos para explorar</span>
-        </div>
-        <div id="network-graph"></div>
-    </section>
+    <!-- ═══ MAIN PANEL ═══ -->
+    <div class="main-panel">
 
-    <!-- ═══ SEARCH ═══ -->
-    <section class="search-section">
-        <h2><i class="fas fa-search"></i> Búsqueda inteligente</h2>
-        <div class="search-box">
-            <i class="fas fa-search search-icon"></i>
-            <input type="text" id="globalSearchInput" placeholder="Buscar por DNI, nombre, empresa o etiqueta..." autocomplete="off">
-            <button id="globalSearchBtn" class="btn btn-primary"><i class="fas fa-arrow-right"></i></button>
-        </div>
-        <div id="searchSuggestions" class="suggestions-dropdown"></div>
-    </section>
-
-    <!-- ═══ BARRA DE BÚSQUEDA ═══ -->
-    <section class="search-section">
-        <div class="search-container">
-            <input type="text" id="search-input" class="search-input" placeholder="Buscar persona por DNI, nombre o apellido..." autocomplete="off">
-            <button id="search-btn" class="btn btn-primary search-btn">Buscar</button>
-        </div>
-        <div id="search-results" class="search-results hidden"></div>
-    </section>
-
-    <!-- ═══ BARRA DE BÚSQUEDA DE EMPRESAS ═══ -->
-    <section class="search-section" style="padding-top:0;">
-        <div class="search-container" style="gap:6px;">
-            <input type="text" id="search-empresa-input" class="search-input" placeholder="Buscar empresa por RUC o nombre..." autocomplete="off" style="padding:10px 14px;font-size:0.9rem;">
-            <button id="search-empresa-btn" class="btn btn-outline" style="padding:10px 20px;">Buscar Empresa</button>
-        </div>
-        <div id="search-empresa-results" class="search-results hidden"></div>
-    </section>
-
-    <!-- ═══ CONTENIDO PRINCIPAL ═══ -->
-    <main id="main-content" class="main-content">
-
-        <!-- Estado inicial -->
-        <div id="empty-state" class="empty-state">
-            <div class="empty-icon">📋</div>
-            <h2>Base de datos de inteligencia</h2>
-            <p>Busque una persona por DNI o nombre para ver su ficha completa,<br>
-            relaciones familiares y parentescos inferidos automáticamente.</p>
-            <div class="empty-hints">
-                <div class="hint-card">
-                    <strong>🔗 Parentescos automáticos</strong>
-                    <p>El sistema deduce abuelos, tíos, cuñados, suegros y más a partir de las relaciones registradas.</p>
-                </div>
-                <div class="hint-card">
-                    <strong>🏷 Sistema de etiquetas</strong>
-                    <p>Marque personas y empresas con etiquetas como "contratado 2024" o "proveedor municipalidad".</p>
-                </div>
-                <div class="hint-card">
-                    <strong>🏢 Empresas y representantes</strong>
-                    <p>Registre empresas con RUC, vincule personas con cargo y marque representantes legales.</p>
-                </div>
+        <!-- ═══ TOPBAR ═══ -->
+        <header class="topbar">
+            <button class="sidebar-toggle" id="sidebar-toggle" title="Menu"><i class="fas fa-bars"></i></button>
+            <div class="topbar-search">
+                <i class="fas fa-search"></i>
+                <input type="text" id="topbar-search-input" placeholder="Buscar persona, empresa, DNI, RUC o etiqueta...">
             </div>
-        </div>
-
-        <!-- Ficha de persona -->
-        <div id="persona-ficha" class="persona-ficha hidden"></div>
-
-        <!-- Ficha de empresa -->
-        <div id="empresa-ficha" class="persona-ficha hidden"></div>
-    </main>
-
-    <!-- ═══ MODAL: NUEVA PERSONA ═══ -->
-    <div id="modal-persona" class="modal hidden">
-
-        <div class="modal-overlay"></div>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modal-persona-title">Nueva Persona</h2>
-                <button class="modal-close" data-close="modal-persona">&times;</button>
+            <div class="topbar-actions">
+                <button class="topbar-btn" onclick="toggleDarkMode()" title="Tema"><i class="fas fa-moon"></i></button>
+                <button class="topbar-btn" title="Notificaciones"><i class="fas fa-bell"></i></button>
+                <button class="topbar-btn topbar-btn-primary" onclick="abrirModalPersona()"><i class="fas fa-plus"></i> Nuevo</button>
             </div>
-            <form id="form-persona" class="modal-form">
-                <div class="form-group">
-                    <label for="p-dni">DNI <span class="required">*</span></label>
-                    <div class="input-with-btn">
-                        <input type="text" id="p-dni" required maxlength="20" placeholder="12345678">
-                        <button type="button" class="btn btn-outline btn-sm" onclick="consultarDni()" title="Buscar datos desde RENIEC">🔍 DNI</button>
+        </header>
+
+        <!-- ═══ PAGE CONTENT ═══ -->
+        <div class="page-area">
+
+            <!-- ═══ VIEW: HOME ═══ -->
+            <div class="view active" id="view-home">
+
+                <!-- Hero -->
+                <section class="hero-intel">
+                    <div class="hero-intel-text">
+                        <div class="hero-intel-badge"><i class="fas fa-robot"></i> Plataforma de inteligencia</div>
+                        <h1>Investiga.<br>Conecta.<br><span class="text-primary">Descubre la verdad.</span></h1>
+                        <p>Explora vinculos entre personas, empresas, contratos y entidades publicas.<br>Detecta patrones de corrupcion, conflictos de interes y favoritismo politico.</p>
+                        <div class="hero-intel-actions">
+                            <button class="btn btn-primary btn-lg" onclick="document.getElementById('topbar-search-input').focus()"><i class="fas fa-search"></i> Buscar ahora</button>
+                            <button class="btn btn-outline btn-lg" onclick="abrirModalImportar()"><i class="fas fa-upload"></i> Importar base de datos</button>
+                        </div>
                     </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="p-nombres">Nombres <span class="required">*</span></label>
-                        <input type="text" id="p-nombres" required placeholder="Juan Carlos">
+                    <div class="hero-intel-visual">
+                        <svg viewBox="0 0 280 260" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <filter id="glow"><feGaussianBlur stdDeviation="3" result="coloredBlur"/><feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                            </defs>
+                            <!-- Central node -->
+                            <circle cx="140" cy="80" r="24" fill="#2563eb" opacity="0.15" filter="url(#glow)"/>
+                            <circle cx="140" cy="80" r="20" fill="#2563eb"/>
+                            <text x="140" y="86" text-anchor="middle" fill="white" font-size="14" font-weight="600">👤</text>
+                            <!-- Lines -->
+                            <line x1="128" y1="100" x2="50" y2="160" stroke="#2563eb" stroke-width="1.5" opacity="0.3"/>
+                            <line x1="152" y1="100" x2="230" y2="160" stroke="#2563eb" stroke-width="1.5" opacity="0.3"/>
+                            <line x1="140" y1="104" x2="140" y2="160" stroke="#2563eb" stroke-width="1.5" opacity="0.3"/>
+                            <line x1="134" y1="104" x2="80" y2="210" stroke="#2563eb" stroke-width="1.5" opacity="0.3"/>
+                            <line x1="146" y1="104" x2="200" y2="210" stroke="#2563eb" stroke-width="1.5" opacity="0.3"/>
+                            <!-- Nodes -->
+                            <g class="g-node"><circle cx="50" cy="165" r="16" fill="#10b981" opacity="0.15"/><circle cx="50" cy="165" r="13" fill="#10b981"/><text x="50" y="170" text-anchor="middle" fill="white" font-size="11">🏢</text></g>
+                            <g class="g-node" style="animation-delay:0.2s"><circle cx="230" cy="165" r="16" fill="#f59e0b" opacity="0.15"/><circle cx="230" cy="165" r="13" fill="#f59e0b"/><text x="230" y="170" text-anchor="middle" fill="white" font-size="11">📄</text></g>
+                            <g class="g-node" style="animation-delay:0.4s"><circle cx="140" cy="165" r="16" fill="#8b5cf6" opacity="0.15"/><circle cx="140" cy="165" r="13" fill="#8b5cf6"/><text x="140" y="170" text-anchor="middle" fill="white" font-size="11">🏛️</text></g>
+                            <g class="g-node" style="animation-delay:0.6s"><circle cx="80" cy="215" r="16" fill="#ec4899" opacity="0.15"/><circle cx="80" cy="215" r="13" fill="#ec4899"/><text x="80" y="220" text-anchor="middle" fill="white" font-size="11">🔗</text></g>
+                            <g class="g-node" style="animation-delay:0.8s"><circle cx="200" cy="215" r="16" fill="#06b6d4" opacity="0.15"/><circle cx="200" cy="215" r="13" fill="#06b6d4"/><text x="200" y="220" text-anchor="middle" fill="white" font-size="11">🏷️</text></g>
+                        </svg>
                     </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="p-ap-paterno">Apellido Paterno <span class="required">*</span></label>
-                        <input type="text" id="p-ap-paterno" required placeholder="Olano">
+                </section>
+
+                <!-- KPI Cards -->
+                <section class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-icon" style="background:#dbeafe;color:#2563eb;"><i class="fas fa-users"></i></div>
+                        <div class="kpi-info">
+                            <span class="kpi-number" id="kpi-personas">—</span>
+                            <span class="kpi-label">Personas</span>
+                            <span class="kpi-trend"><i class="fas fa-arrow-up"></i> <span id="trend-personas">+0</span> esta semana</span>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="p-ap-materno">Apellido Materno</label>
-                        <input type="text" id="p-ap-materno" placeholder="Romero">
+                    <div class="kpi-card">
+                        <div class="kpi-icon" style="background:#dcfce7;color:#16a34a;"><i class="fas fa-building"></i></div>
+                        <div class="kpi-info">
+                            <span class="kpi-number" id="kpi-empresas">—</span>
+                            <span class="kpi-label">Empresas</span>
+                            <span class="kpi-trend"><i class="fas fa-arrow-up"></i> <span id="trend-empresas">+0</span> esta semana</span>
+                        </div>
                     </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="p-fecha-nac">Fecha de Nacimiento</label>
-                        <input type="date" id="p-fecha-nac">
+                    <div class="kpi-card">
+                        <div class="kpi-icon" style="background:#f3e8ff;color:#7c3aed;"><i class="fas fa-project-diagram"></i></div>
+                        <div class="kpi-info">
+                            <span class="kpi-number" id="kpi-relaciones">—</span>
+                            <span class="kpi-label">Relaciones</span>
+                            <span class="kpi-trend"><i class="fas fa-arrow-up"></i> <span id="trend-relaciones">+0</span> esta semana</span>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="p-foto">URL de Foto</label>
-                        <input type="url" id="p-foto" placeholder="https://...">
+                    <div class="kpi-card">
+                        <div class="kpi-icon" style="background:#fef3c7;color:#d97706;"><i class="fas fa-tags"></i></div>
+                        <div class="kpi-info">
+                            <span class="kpi-number" id="kpi-etiquetas">—</span>
+                            <span class="kpi-label">Etiquetas</span>
+                            <span class="kpi-trend"><i class="fas fa-arrow-up"></i> <span id="trend-etiquetas">+0</span> esta semana</span>
+                        </div>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label for="p-notas">Notas</label>
-                    <textarea id="p-notas" rows="3" placeholder="Información relevante para la investigación..."></textarea>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-persona">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Guardar Persona</button>
-                </div>
-            </form>
-        </div>
-    </div>
+                </section>
 
-    <!-- ═══ MODAL: NUEVA EMPRESA ═══ -->
-    <div id="modal-empresa" class="modal hidden">
-
-        <div class="modal-overlay"></div>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modal-empresa-title">Nueva Empresa</h2>
-                <button class="modal-close" data-close="modal-empresa">&times;</button>
-            </div>
-            <form id="form-empresa" class="modal-form">
-                <div class="form-group">
-                    <label for="e-ruc">RUC <span class="required">*</span></label>
-                    <div class="input-with-btn">
-                        <input type="text" id="e-ruc" required maxlength="11" pattern="[0-9]{11}" placeholder="20123456789">
-                        <button type="button" class="btn btn-outline btn-sm" onclick="consultarRuc()" title="Buscar datos desde SUNAT">🔍 RUC</button>
+                <!-- Main grid: Graph + Right panel -->
+                <div class="home-grid">
+                    <div class="home-grid-main">
+                        <div class="card card-graph">
+                            <div class="card-header">
+                                <div><i class="fas fa-network-wired" style="color:var(--primary);"></i> Mapa de relaciones</div>
+                                <span class="card-hint">Arrastra los nodos para explorar</span>
+                            </div>
+                            <div id="network-graph" style="height:380px;border-radius:12px;"></div>
+                        </div>
                     </div>
+                    <aside class="home-grid-side">
+                        <div class="card">
+                            <div class="card-header"><i class="fas fa-clock" style="color:var(--primary);"></i> Investigaciones recientes</div>
+                            <div class="invest-card"><div class="invest-title">Proveedores Municipalidad San Ramon</div><div class="invest-meta">12 personas · 8 empresas</div></div>
+                            <div class="invest-card"><div class="invest-title">Contrataciones familiares 2024</div><div class="invest-meta">5 personas · 3 empresas</div></div>
+                            <div class="invest-card"><div class="invest-title">Empresas vinculadas a funcionarios</div><div class="invest-meta">28 personas · 15 empresas</div></div>
+                            <div class="invest-card"><div class="invest-title">Red de proveedores del Estado</div><div class="invest-meta">45 personas · 22 empresas</div></div>
+                        </div>
+                    </aside>
                 </div>
-                <div class="form-group">
-                    <label for="e-nombre">Razón Social <span class="required">*</span></label>
-                    <input type="text" id="e-nombre" required placeholder="MINERIA PERU S.A.C.">
-                </div>
-                <div class="form-group">
-                    <label for="e-direccion">Dirección</label>
-                    <input type="text" id="e-direccion" placeholder="Av. Principal 123, Lima">
-                </div>
-                <div class="form-group">
-                    <label for="e-notas">Notas</label>
-                    <textarea id="e-notas" rows="3" placeholder="Información relevante sobre la empresa..."></textarea>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-empresa">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Guardar Empresa</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: NUEVA RELACIÓN ═══ -->
-    <div id="modal-relacion" class="modal hidden">
-
-        <div class="modal-overlay"></div>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Nueva Relación</h2>
-                <button class="modal-close" data-close="modal-relacion">&times;</button>
             </div>
-            <form id="form-relacion" class="modal-form">
-                <div class="form-group">
-                    <label for="r-origen">DNI de la Persona Origen <span class="required">*</span></label>
-                    <input type="text" id="r-origen" required placeholder="DNI de quien ejerce la relación">
-                </div>
-                <div class="form-group">
-                    <label for="r-tipo">Tipo de Relación <span class="required">*</span></label>
-                    <select id="r-tipo" required>
-                        <option value="">Seleccione...</option>
-                        <option value="padre">Padre → Hijo/a</option>
-                        <option value="madre">Madre → Hijo/a</option>
-                        <option value="conyuge">Cónyuge</option>
-                        <option value="hermano">Hermano</option>
-                        <option value="hermana">Hermana</option>
-                    </select>
-                    <small>La relación es dirigida: "A es padre de B". "Hijo/a" se infiere automáticamente.</small>
-                </div>
-                <div class="form-group">
-                    <label for="r-destino">DNI de la Persona Destino <span class="required">*</span></label>
-                    <input type="text" id="r-destino" required placeholder="DNI de quien recibe la relación">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="r-certeza">Certeza</label>
-                        <select id="r-certeza">
-                            <option value="confirmado">Confirmado</option>
-                            <option value="rumor">Rumor</option>
-                            <option value="documento">Documento</option>
-                        </select>
+
+            <!-- ═══ VIEW: PERSONAS ═══ -->
+            <div class="view" id="view-personas">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-user" style="color:var(--primary);"></i> Personas</div>
+                    <div class="search-container" style="margin-bottom:16px;">
+                        <input type="text" id="search-input" class="search-input" placeholder="Buscar persona por DNI, nombre o apellido..." autocomplete="off">
+                        <button id="search-btn" class="btn btn-primary">Buscar</button>
                     </div>
+                    <div id="search-results" class="search-results hidden"></div>
                 </div>
-                <div class="form-group">
-                    <label for="r-notas">Notas</label>
-                    <textarea id="r-notas" rows="2" placeholder="Fuente de la información..."></textarea>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-relacion">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Crear Relación</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: VINCULAR PERSONA ↔ EMPRESA ═══ -->
-    <div id="modal-vincular-empresa" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Vincular Persona → Empresa</h2>
-                <button class="modal-close" data-close="modal-vincular-empresa">&times;</button>
+                <div id="persona-ficha" class="persona-ficha" style="margin-top:12px;"></div>
             </div>
-            <form id="form-vincular-empresa" class="modal-form">
-                <div class="form-group">
-                    <label for="ve-dni">DNI de la Persona <span class="required">*</span></label>
-                    <input type="text" id="ve-dni" required placeholder="12345678">
-                </div>
-                <div class="form-group">
-                    <label for="ve-ruc">RUC de la Empresa <span class="required">*</span></label>
-                    <input type="text" id="ve-ruc" required maxlength="11" placeholder="20123456789">
-                    <small>Si la empresa no existe, se creará automáticamente con ese RUC.</small>
-                </div>
-                <div class="form-group">
-                    <label for="ve-cargo">Cargo <span class="required">*</span></label>
-                    <select id="ve-cargo" required>
-                        <option value="trabajador">Trabajador</option>
-                        <option value="representante legal">Representante Legal</option>
-                        <option value="gerente general">Gerente General</option>
-                        <option value="socio">Socio</option>
-                        <option value="accionista">Accionista</option>
-                        <option value="otro">Otro</option>
-                    </select>
-                </div>
-                <div class="form-group" id="ve-cargo-otro-group" style="display:none;">
-                    <label for="ve-cargo-otro">Especifique el cargo</label>
-                    <input type="text" id="ve-cargo-otro" placeholder="Ej: director financiero">
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="ve-fecha-desde">Desde</label>
-                        <input type="date" id="ve-fecha-desde">
+
+            <!-- ═══ VIEW: EMPRESAS ═══ -->
+            <div class="view" id="view-empresas">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-building" style="color:var(--primary);"></i> Empresas</div>
+                    <div class="search-container" style="margin-bottom:16px;">
+                        <input type="text" id="search-empresa-input" class="search-input" placeholder="Buscar empresa por RUC o nombre..." autocomplete="off">
+                        <button id="search-empresa-btn" class="btn btn-outline">Buscar Empresa</button>
                     </div>
-                    <div class="form-group">
-                        <label for="ve-fecha-hasta">Hasta</label>
-                        <input type="date" id="ve-fecha-hasta">
-                    </div>
+                    <div id="search-empresa-results" class="search-results hidden"></div>
+                </div>
+                <div id="empresa-ficha" class="persona-ficha" style="margin-top:12px;"></div>
+            </div>
+
+            <!-- ═══ VIEW: RELACIONES ═══ -->
+            <div class="view" id="view-relaciones"></div>
+
+            <!-- ═══ VIEW: ETIQUETAS ═══ -->
+            <div class="view" id="view-etiquetas">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-tags" style="color:var(--primary);"></i> Etiquetas</div>
+                    <div id="lista-etiquetas-content"></div>
+                </div>
+            </div>
+
+            <!-- ═══ VIEW: IMPORTAR ═══ -->
+            <div class="view" id="view-importar">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-upload" style="color:var(--primary);"></i> Importar datos</div>
+                    <button class="btn btn-primary btn-lg" onclick="abrirModalImportar()" style="width:100%;"><i class="fas fa-upload"></i> Abrir importador</button>
+                </div>
+            </div>
+
+            <!-- ═══ VIEW: DASHBOARD ═══ -->
+            <div class="view" id="view-dashboard">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-chart-bar" style="color:var(--primary);"></i> Dashboard</div>
+                    <div id="dashboard-content"></div>
+                </div>
+            </div>
+
+            <!-- ═══ VIEW: REPORTES ═══ -->
+            <div class="view" id="view-reportes">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-file-alt" style="color:var(--primary);"></i> Reportes</div>
+                    <p style="color:var(--muted);">Proximamente...</p>
+                </div>
+            </div>
+
+            <!-- ═══ CONTAINERS OCULTOS (necesarios para ui.js) ═══ -->
+            <div id="empty-state" class="empty-state" style="display:none;"></div>
+            <div id="globalSearchInput" style="display:none;"></div>
+            <div id="globalSearchBtn" style="display:none;"></div>
+            <div id="searchSuggestions" class="suggestions-dropdown" style="display:none;"></div>
+
+        </div>
+        <!-- FIN PAGE AREA -->
+    </div>
+    <!-- FIN MAIN PANEL -->
+</div>
+<!-- FIN APP WRAPPER -->
+
+<!-- ═══ MODALS ═══ -->
+
+<!-- Modal Persona -->
+<div id="modal-persona" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-persona-title">Nueva Persona</h2>
+            <button class="modal-close" data-close="modal-persona">&times;</button>
+        </div>
+        <form id="form-persona" class="modal-form">
+            <div class="form-group">
+                <label for="p-dni">DNI <span class="required">*</span></label>
+                <div class="input-with-btn">
+                    <input type="text" id="p-dni" required maxlength="20" placeholder="12345678">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="consultarDni()" title="Buscar datos desde RENIEC">🔍 DNI</button>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="p-nombres">Nombres <span class="required">*</span></label>
+                    <input type="text" id="p-nombres" required placeholder="Juan Carlos">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="p-ap-paterno">Apellido Paterno <span class="required">*</span></label>
+                    <input type="text" id="p-ap-paterno" required placeholder="Olano">
                 </div>
                 <div class="form-group">
-                    <label for="ve-obs">Observación</label>
-                    <textarea id="ve-obs" rows="2" placeholder="Detalles del vínculo..."></textarea>
+                    <label for="p-ap-materno">Apellido Materno</label>
+                    <input type="text" id="p-ap-materno" placeholder="Romero">
                 </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-vincular-empresa">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Vincular</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: ASIGNAR ETIQUETA A PERSONA ═══ -->
-    <div id="modal-etiqueta" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Asignar Etiqueta</h2>
-                <button class="modal-close" data-close="modal-etiqueta">&times;</button>
             </div>
-            <form id="form-etiqueta" class="modal-form">
-                <input type="hidden" id="e-dni">
+            <div class="form-row">
                 <div class="form-group">
-                    <label for="etq-nombre">Nombre de la Etiqueta <span class="required">*</span></label>
-                    <input type="text" id="etq-nombre" required placeholder="Ej: contratado 2024, proveedor municipalidad">
-                    <small>Si la etiqueta no existe, se creará automáticamente.</small>
+                    <label for="p-fecha-nac">Fecha de Nacimiento</label>
+                    <input type="date" id="p-fecha-nac">
                 </div>
                 <div class="form-group">
-                    <label for="e-obs">Observación</label>
-                    <textarea id="e-obs" rows="3" placeholder="Detalle de la asignación (ej: contrato N° 123 del 15/03/2024)..."></textarea>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-etiqueta">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Asignar Etiqueta</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: ASIGNAR ETIQUETA A EMPRESA ═══ -->
-    <div id="modal-etiqueta-empresa" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Asignar Etiqueta a Empresa</h2>
-                <button class="modal-close" data-close="modal-etiqueta-empresa">&times;</button>
-            </div>
-            <form id="form-etiqueta-empresa" class="modal-form">
-                <input type="hidden" id="ee-ruc">
-                <div class="form-group">
-                    <label for="ee-nombre">Nombre de la Etiqueta <span class="required">*</span></label>
-                    <input type="text" id="ee-nombre" required placeholder="Ej: PROVEEDOR 2019-2022">
-                    <small>Si la etiqueta no existe, se creará automáticamente.</small>
-                </div>
-                <div class="form-group">
-                    <label for="ee-obs">Observación</label>
-                    <textarea id="ee-obs" rows="3" placeholder="Detalle de la asignación..."></textarea>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-etiqueta-empresa">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Asignar</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: LISTA DE ETIQUETAS ═══ -->
-    <div id="modal-lista-etiquetas" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width:650px;">
-            <div class="modal-header">
-                <h2>Todas las Etiquetas</h2>
-                <button class="modal-close" data-close="modal-lista-etiquetas">&times;</button>
-            </div>
-            <div id="lista-etiquetas-content" class="modal-body">
-                <p class="loading-text">Cargando...</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: VISOR BD (personas) ═══ -->
-    <div id="modal-visorbd" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 960px;">
-            <div class="modal-header">
-                <h2>📊 Visor de Personas</h2>
-                <button class="modal-close" data-close="modal-visorbd">&times;</button>
-            </div>
-            <div id="visorbd-content" class="modal-body">
-                <p class="loading-text">Cargando...</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: VISOR EMPRESAS ═══ -->
-    <div id="modal-visorempresas" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 960px;">
-            <div class="modal-header">
-                <h2>🏢 Visor de Empresas</h2>
-                <button class="modal-close" data-close="modal-visorempresas">&times;</button>
-            </div>
-            <div id="visorempresas-content" class="modal-body">
-                <p class="loading-text">Cargando...</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: IMPORTAR (unificado) ═══ -->
-    <div id="modal-importar" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h2>📥 Importar</h2>
-                <button class="modal-close" data-close="modal-importar">&times;</button>
-            </div>
-            <form id="form-importar" class="modal-form">
-                <div class="form-group">
-                    <label for="imp-formato">Formato</label>
-                    <select id="imp-formato" class="search-input" style="font-size:0.9rem;padding:8px;">
-                        <option value="auto">🪄 Automático (recomendado)</option>
-                        <option value="csv">📋 CSV simple (DNI,Nombres,ApellidoPaterno,ApellidoMaterno)</option>
-                        <option value="ruc_batch">🔢 Batch RUC (listado tabulado RUC + nombre)</option>
-                        <option value="sunat_macro">🏢 Empresas SUNAT (macro 21 columnas)</option>
-                        <option value="leder_individual">🧠 LEDER DATA (reporte individual)</option>
-                        <option value="leder_telegram">🤖 LEDER DATA (export Telegram HTML)</option>
-                    </select>
-                </div>
-
-                <p id="imp-hint" class="import-info"></p>
-
-                <ul id="imp-hint-list" class="import-info hidden" style="margin:8px 0 16px 20px;font-size:0.85rem;line-height:1.6;">
-                    <li>👤 <b>META</b> → crea/actualiza personas con datos biograficos</li>
-                    <li>👨‍👩‍👧‍👦 <b>FAMILIA</b> → crea personas + vinculos familiares (padres, hijos, conyuge, hermanos)</li>
-                    <li>🏢 <b>EMPRESAS</b> → crea empresas + vinculos persona→empresa</li>
-                    <li>📄 <b>SUNAT</b> → datos de RUC y empresa</li>
-                    <li>💰 <b>SUELDOS</b> → historial laboral como notas</li>
-                    <li>📞 <b>TELEFONOS / CORREOS / VEHICULOS</b> → datos de contacto como notas</li>
-                </ul>
-
-                <div id="imp-dropzone-wrap" class="form-group hidden">
-                    <label>📂 Arrastra tus archivos HTML aquí o haz clic para seleccionar</label>
-                    <div id="li-dropzone" style="border:2px dashed var(--color-border);border-radius:12px;padding:30px;text-align:center;cursor:pointer;margin-bottom:12px;transition:all 0.2s;background:var(--color-bg);"
-                         ondragover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-bg-hover)';event.preventDefault();"
-                         ondragleave="this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)';"
-                         ondrop="event.preventDefault();lederDropFiles(event.dataTransfer.files);this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)';"
-                         onclick="document.getElementById('li-file-input').click();">
-                        <div style="font-size:2rem;margin-bottom:8px;">📁</div>
-                        <div style="font-weight:500;color:var(--color-text-secondary);">Suelta tus archivos HTML aquí</div>
-                        <div style="font-size:0.8rem;color:var(--color-text-tertiary);margin-top:4px;">o haz clic para seleccionar</div>
-                    </div>
-                    <input type="file" id="li-file-input" accept=".html,.htm,.txt" multiple style="display:none;" onchange="lederDropFiles(this.files);">
-                    <div id="li-file-names" style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:8px;"></div>
-                </div>
-
-                <div id="imp-etiqueta-wrap" class="form-group">
-                    <label for="imp-etiqueta">🏷 Etiqueta (opcional)</label>
-                    <input type="text" id="imp-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR 2019-2022" style="font-size:0.9rem;padding:8px;">
-                </div>
-
-                <div class="form-group">
-                    <label for="imp-textarea" id="imp-textarea-label">Datos</label>
-                    <textarea id="imp-textarea" class="import-textarea" rows="15" placeholder="Pegue aquí los datos a importar..."></textarea>
-                </div>
-
-                <div id="imp-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
-
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-ghost" data-close="modal-importar">Cerrar</button>
-                    <button type="button" id="btn-imp-debug" class="btn btn-outline hidden" onclick="lederDebug()">🔍 Debug</button>
-                    <button type="submit" class="btn btn-primary">Importar</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: RESET DB ═══ -->
-    <div id="modal-reset" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
-                <h2>⚠️ Resetear Base de Datos</h2>
-                <button class="modal-close" data-close="modal-reset">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p style="color:var(--color-danger);font-weight:600;margin-bottom:12px;">Esta acción eliminará TODOS los datos del sistema:</p>
-                <ul style="margin-bottom:16px;padding-left:20px;line-height:1.8;">
-                    <li>👤 Todas las <strong>personas</strong></li>
-                    <li>🏢 Todas las <strong>empresas</strong></li>
-                    <li>🔗 Todas las <strong>relaciones</strong> y vínculos</li>
-                    <li>🏷 Todas las <strong>etiquetas</strong></li>
-                    <li>📝 Todos los registros de <strong>auditoría</strong></li>
-                </ul>
-                <p style="margin-bottom:16px;">Para confirmar, escriba <strong style="color:var(--color-danger);">RESET</strong> en el campo inferior y presione el botón rojo.</p>
-                <input type="text" id="reset-confirm-input" class="search-input" placeholder="Escriba RESET para confirmar..." style="width:100%;padding:12px;font-size:1rem;text-align:center;border:2px solid var(--color-border);border-radius:var(--radius);">
-                <div class="modal-actions" style="margin-top:16px;">
-                    <button type="button" class="btn btn-ghost" data-close="modal-reset">Cancelar</button>
-                    <button id="btn-reset-confirm" class="btn btn-danger" disabled style="background:#dc2626;color:#fff;border:none;padding:10px 24px;border-radius:var(--radius);font-weight:600;opacity:0.5;">🗑 Resetear Todo</button>
+                    <label for="p-foto">URL de Foto</label>
+                    <input type="url" id="p-foto" placeholder="https://...">
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- ═══ MODAL: DASHBOARD ═══ -->
-    <div id="modal-dashboard" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h2>📊 Dashboard</h2>
-                <button class="modal-close" data-close="modal-dashboard">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="dashboard-content" class="loading-text">Cargando...</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ═══ PROGRESO ENRIQUECER ═══ -->
-    <div id="modal-progreso" class="modal hidden">
-        <div class="modal-overlay" data-close="modal-progreso"></div>
-        <div class="modal-content" style="max-width:450px;">
-            <div class="modal-header">
-                <h2 id="progreso-titulo">🔄 Enriqueciendo empresas</h2>
-                <button class="modal-close" data-close="modal-progreso">&times;</button>
-            </div>
-            <div class="modal-body" style="text-align:center;">
-                <div id="progreso-mensaje" style="margin-bottom:12px;color:var(--color-text-secondary);font-size:0.9rem;">Iniciando...</div>
-                <div style="background:var(--color-border);border-radius:10px;height:24px;overflow:hidden;margin-bottom:8px;">
-                    <div id="progreso-barra" style="width:0%;height:100%;background:var(--color-primary);border-radius:10px;transition:width 0.3s ease;"></div>
-                </div>
-                <div id="progreso-texto" style="font-size:0.85rem;font-weight:500;">0 / 0</div>
-                <div id="progreso-ruc" style="margin-top:8px;font-size:0.8rem;color:var(--color-text-secondary);"></div>
-                <div id="progreso-errores" style="margin-top:12px;font-size:0.8rem;color:var(--color-danger);text-align:left;max-height:100px;overflow-y:auto;"></div>
+            <div class="form-group">
+                <label for="p-notas">Notas</label>
+                <textarea id="p-notas" rows="3" placeholder="Informacion relevante para la investigacion..."></textarea>
             </div>
             <div class="modal-actions">
-                <button id="btn-cancelar-enriquecer" class="btn btn-ghost" onclick="cancelarEnriquecimiento()">Cancelar</button>
+                <button type="button" class="btn btn-ghost" data-close="modal-persona">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Guardar Persona</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Empresa -->
+<div id="modal-empresa" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modal-empresa-title">Nueva Empresa</h2>
+            <button class="modal-close" data-close="modal-empresa">&times;</button>
+        </div>
+        <form id="form-empresa" class="modal-form">
+            <div class="form-group">
+                <label for="e-ruc">RUC <span class="required">*</span></label>
+                <div class="input-with-btn">
+                    <input type="text" id="e-ruc" required maxlength="11" pattern="[0-9]{11}" placeholder="20123456789">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="consultarRuc()" title="Buscar datos desde SUNAT">🔍 RUC</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="e-nombre">Razon Social <span class="required">*</span></label>
+                <input type="text" id="e-nombre" required placeholder="MINERIA PERU S.A.C.">
+            </div>
+            <div class="form-group">
+                <label for="e-direccion">Direccion</label>
+                <input type="text" id="e-direccion" placeholder="Av. Principal 123, Lima">
+            </div>
+            <div class="form-group">
+                <label for="e-notas">Notas</label>
+                <textarea id="e-notas" rows="3" placeholder="Informacion relevante sobre la empresa..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close="modal-empresa">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Guardar Empresa</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Relacion -->
+<div id="modal-relacion" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Nueva Relacion</h2>
+            <button class="modal-close" data-close="modal-relacion">&times;</button>
+        </div>
+        <form id="form-relacion" class="modal-form">
+            <div class="form-group">
+                <label for="r-origen">DNI de la Persona Origen <span class="required">*</span></label>
+                <input type="text" id="r-origen" required placeholder="DNI de quien ejerce la relacion">
+            </div>
+            <div class="form-group">
+                <label for="r-tipo">Tipo de Relacion <span class="required">*</span></label>
+                <select id="r-tipo" required>
+                    <option value="">Seleccione...</option>
+                    <option value="padre">Padre → Hijo/a</option>
+                    <option value="madre">Madre → Hijo/a</option>
+                    <option value="conyuge">Conyuge</option>
+                    <option value="hermano">Hermano</option>
+                    <option value="hermana">Hermana</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="r-destino">DNI de la Persona Destino <span class="required">*</span></label>
+                <input type="text" id="r-destino" required placeholder="DNI de quien recibe la relacion">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="r-certeza">Certeza</label>
+                    <select id="r-certeza">
+                        <option value="confirmado">Confirmado</option>
+                        <option value="rumor">Rumor</option>
+                        <option value="documento">Documento</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="r-notas">Notas</label>
+                <textarea id="r-notas" rows="2" placeholder="Fuente de la informacion..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close="modal-relacion">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Crear Relacion</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Vincular Empresa -->
+<div id="modal-vincular-empresa" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Vincular Persona → Empresa</h2>
+            <button class="modal-close" data-close="modal-vincular-empresa">&times;</button>
+        </div>
+        <form id="form-vincular-empresa" class="modal-form">
+            <div class="form-group">
+                <label for="ve-dni">DNI de la Persona <span class="required">*</span></label>
+                <input type="text" id="ve-dni" required placeholder="12345678">
+            </div>
+            <div class="form-group">
+                <label for="ve-ruc">RUC de la Empresa <span class="required">*</span></label>
+                <input type="text" id="ve-ruc" required maxlength="11" placeholder="20123456789">
+            </div>
+            <div class="form-group">
+                <label for="ve-cargo">Cargo <span class="required">*</span></label>
+                <select id="ve-cargo" required>
+                    <option value="trabajador">Trabajador</option>
+                    <option value="representante legal">Representante Legal</option>
+                    <option value="gerente general">Gerente General</option>
+                    <option value="socio">Socio</option>
+                    <option value="accionista">Accionista</option>
+                    <option value="otro">Otro</option>
+                </select>
+            </div>
+            <div class="form-group" id="ve-cargo-otro-group" style="display:none;">
+                <label for="ve-cargo-otro">Especifique el cargo</label>
+                <input type="text" id="ve-cargo-otro" placeholder="Ej: director financiero">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="ve-fecha-desde">Desde</label>
+                    <input type="date" id="ve-fecha-desde">
+                </div>
+                <div class="form-group">
+                    <label for="ve-fecha-hasta">Hasta</label>
+                    <input type="date" id="ve-fecha-hasta">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="ve-obs">Observacion</label>
+                <textarea id="ve-obs" rows="2" placeholder="Detalles del vinculo..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close="modal-vincular-empresa">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Vincular</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Etiqueta Persona -->
+<div id="modal-etiqueta" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Asignar Etiqueta</h2>
+            <button class="modal-close" data-close="modal-etiqueta">&times;</button>
+        </div>
+        <form id="form-etiqueta" class="modal-form">
+            <input type="hidden" id="e-dni">
+            <div class="form-group">
+                <label for="etq-nombre">Nombre de la Etiqueta <span class="required">*</span></label>
+                <input type="text" id="etq-nombre" required placeholder="Ej: contratado 2024">
+            </div>
+            <div class="form-group">
+                <label for="e-obs">Observacion</label>
+                <textarea id="e-obs" rows="3" placeholder="Detalle de la asignacion..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close="modal-etiqueta">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Asignar Etiqueta</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Etiqueta Empresa -->
+<div id="modal-etiqueta-empresa" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Asignar Etiqueta a Empresa</h2>
+            <button class="modal-close" data-close="modal-etiqueta-empresa">&times;</button>
+        </div>
+        <form id="form-etiqueta-empresa" class="modal-form">
+            <input type="hidden" id="ee-ruc">
+            <div class="form-group">
+                <label for="ee-nombre">Nombre de la Etiqueta <span class="required">*</span></label>
+                <input type="text" id="ee-nombre" required placeholder="Ej: PROVEEDOR 2019-2022">
+            </div>
+            <div class="form-group">
+                <label for="ee-obs">Observacion</label>
+                <textarea id="ee-obs" rows="3" placeholder="Detalle de la asignacion..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close="modal-etiqueta-empresa">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Asignar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Lista Etiquetas -->
+<div id="modal-lista-etiquetas" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content" style="max-width:650px;">
+        <div class="modal-header">
+            <h2>Todas las Etiquetas</h2>
+            <button class="modal-close" data-close="modal-lista-etiquetas">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="lista-etiquetas-content-inner"><p class="loading-text">Cargando...</p></div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Visor BD -->
+<div id="modal-visorbd" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content" style="max-width:960px;">
+        <div class="modal-header">
+            <h2>Visor de Personas</h2>
+            <button class="modal-close" data-close="modal-visorbd">&times;</button>
+        </div>
+        <div id="visorbd-content" class="modal-body"><p class="loading-text">Cargando...</p></div>
+    </div>
+</div>
+
+<!-- Modal Visor Empresas -->
+<div id="modal-visorempresas" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content" style="max-width:960px;">
+        <div class="modal-header">
+            <h2>Visor de Empresas</h2>
+            <button class="modal-close" data-close="modal-visorempresas">&times;</button>
+        </div>
+        <div id="visorempresas-content" class="modal-body"><p class="loading-text">Cargando...</p></div>
+    </div>
+</div>
+
+<!-- Modal Importar -->
+<div id="modal-importar" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content" style="max-width:800px;">
+        <div class="modal-header">
+            <h2>Importar</h2>
+            <button class="modal-close" data-close="modal-importar">&times;</button>
+        </div>
+        <form id="form-importar" class="modal-form">
+            <div class="form-group">
+                <label for="imp-formato">Formato</label>
+                <select id="imp-formato" class="search-input" style="font-size:0.9rem;padding:8px;">
+                    <option value="auto">Automatico (recomendado)</option>
+                    <option value="csv">CSV simple</option>
+                    <option value="ruc_batch">Batch RUC</option>
+                    <option value="sunat_macro">Empresas SUNAT</option>
+                    <option value="leder_individual">LEDER DATA individual</option>
+                    <option value="leder_telegram">LEDER DATA Telegram HTML</option>
+                </select>
+            </div>
+            <p id="imp-hint" class="import-info"></p>
+            <div class="form-group">
+                <label for="imp-etiqueta">Etiqueta (opcional)</label>
+                <input type="text" id="imp-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR 2019-2022">
+            </div>
+            <div class="form-group">
+                <label for="imp-textarea">Datos</label>
+                <textarea id="imp-textarea" class="import-textarea" rows="15" placeholder="Pegue aqui los datos a importar..."></textarea>
+            </div>
+            <div id="imp-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close="modal-importar">Cerrar</button>
+                <button type="submit" class="btn btn-primary">Importar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Reset -->
+<div id="modal-reset" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content" style="max-width:500px;">
+        <div class="modal-header">
+            <h2>Resetear Base de Datos</h2>
+            <button class="modal-close" data-close="modal-reset">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="color:var(--danger);font-weight:600;margin-bottom:12px;">Esta accion eliminara TODOS los datos del sistema.</p>
+            <input type="text" id="reset-confirm-input" class="search-input" placeholder="Escriba RESET para confirmar...">
+            <div class="modal-actions" style="margin-top:16px;">
+                <button type="button" class="btn btn-ghost" data-close="modal-reset">Cancelar</button>
+                <button id="btn-reset-confirm" class="btn btn-danger" disabled>Resetear Todo</button>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- ═══ TOAST ═══ -->
-    <div id="toast" class="toast hidden"></div>
+<!-- Modal Dashboard -->
+<div id="modal-dashboard" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <div class="modal-content" style="max-width:800px;">
+        <div class="modal-header">
+            <h2>Dashboard</h2>
+            <button class="modal-close" data-close="modal-dashboard">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="dashboard-content" class="loading-text">Cargando...</div>
+        </div>
+    </div>
+</div>
 
-    <script src="/static/js/state.js"></script>
+<!-- Modal Progreso -->
+<div id="modal-progreso" class="modal hidden">
+    <div class="modal-overlay" data-close="modal-progreso"></div>
+    <div class="modal-content" style="max-width:450px;">
+        <div class="modal-header">
+            <h2 id="progreso-titulo">Enriqueciendo empresas</h2>
+            <button class="modal-close" data-close="modal-progreso">&times;</button>
+        </div>
+        <div class="modal-body" style="text-align:center;">
+            <div id="progreso-mensaje" style="margin-bottom:12px;">Iniciando...</div>
+            <div style="background:var(--border);border-radius:10px;height:24px;overflow:hidden;margin-bottom:8px;">
+                <div id="progreso-barra" style="width:0%;height:100%;background:var(--primary);border-radius:10px;transition:width 0.3s ease;"></div>
+            </div>
+            <div id="progreso-texto" style="font-size:0.85rem;">0 / 0</div>
+            <div id="progreso-ruc" style="margin-top:8px;font-size:0.8rem;color:var(--muted);"></div>
+            <div id="progreso-errores" style="margin-top:12px;font-size:0.8rem;color:var(--danger);text-align:left;max-height:100px;overflow-y:auto;"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="btn-cancelar-enriquecer" class="btn btn-ghost" onclick="cancelarEnriquecimiento()">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<button id="btn-etiquetas" style="display:none;"></button>
+
+<!-- Hidden buttons for ui.js -->
+<button id="btn-nueva-persona" style="display:none;"></button>
+<button id="btn-nueva-relacion" style="display:none;"></button>
+<button id="btn-nueva-empresa" style="display:none;"></button>
+<button id="btn-visorbd" style="display:none;"></button>
+<button id="btn-visorempresas" style="display:none;"></button>
+<button id="btn-importar" style="display:none;"></button>
+<button id="btn-dashboard" style="display:none;"></button>
+<button id="btn-reset" style="display:none;"></button>
+<button id="btn-reset-confirm" style="display:none;"></button>
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<script src="/static/js/state.js"></script>
 <script src="/static/js/api.js"></script>
 <script src="/static/ui.js"></script>
 <script src="/static/js/app.js"></script>
