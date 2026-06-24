@@ -56,8 +56,9 @@ def _nota(p, texto):
 
 def procesar_persona(db, texto):
     dni = _campo(texto, "DNI")
-    if not dni or "-" not in dni: return None
-    dni = dni.split("-")[0].strip()
+    if not dni: return None
+    # Strip check digit if present: "40776659 - 3" -> "40776659"
+    dni = dni.split("-")[0].strip() if "-" in dni else dni.strip()
     nom = _campo(texto, "NOMBRES")
     ap = _campo(texto, "APELLIDOS")
     ap_p = ap.split()[0] if ap else None
@@ -216,21 +217,20 @@ def procesar_texto_leder(db, raw):
         if len(msg) < 20: continue
         try:
             tipo = None
-            if "[#LEDER_BOT]" in msg and "META [PREMIUM]" in msg and "|" not in msg.split("META")[1][:30]:
-                tipo = "M"
-            elif "FAMILIA [1]" in msg: tipo = "F1"
-            elif "FAMILIA [2]" in msg: tipo = "F2"
-            elif "EMPRESAS" in msg: tipo = "E"
-            elif "SUNAT" in msg: tipo = "S"
-            elif "SUELDOS" in msg: tipo = "SUELDOS"
+            if "SUELDOS" in msg: tipo = "SUELDOS"
             elif "TELEFONOS" in msg: tipo = "TELEFONOS"
             elif "CORREOS" in msg: tipo = "CORREOS"
             elif "VEHICULOS" in msg: tipo = "VEHICULOS"
             elif "DIRECCIONES" in msg: tipo = "DIRECCIONES"
             elif "TRABAJOS" in msg: tipo = "TRABAJOS"
-            elif "RENIEC NOMBRES" in msg: tipo = "RENIEC"
             elif "AFPS" in msg: tipo = "AFPS"
             elif "HOGAR" in msg: tipo = "HOGAR"
+            elif "FAMILIA [1]" in msg: tipo = "F1"
+            elif "FAMILIA [2]" in msg: tipo = "F2"
+            elif "EMPRESAS" in msg and "META" in msg: tipo = "E"
+            elif "SUNAT" in msg and "META" in msg: tipo = "S"
+            elif "RENIEC" in msg: tipo = "RENIEC"
+            elif "META" in msg and "PREMIUM" in msg: tipo = "M"
             if not tipo: continue
             dni_ctx = _campo(msg, "DNI")
             if dni_ctx and "-" in dni_ctx: dni_ctx = dni_ctx.split("-")[0].strip()
