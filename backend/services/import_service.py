@@ -102,8 +102,16 @@ def _vincular_si_no_existe(db: Session, persona_id: int, empresa_id: int, cargo:
     return True
 
 
+def _limpiar_nombre(texto: str) -> str:
+    """Limpia caracteres especiales de nombres: comillas, asteriscos, etc."""
+    texto = re.sub(r'["\'*_]', '', texto)
+    texto = re.sub(r'\s+', ' ', texto)
+    return texto.strip()
+
+
 def _separar_nombre_completo(nombre_completo: str):
     """'APELLIDO1 APELLIDO2 NOMBRES...' -> (nombres, ap_paterno, ap_materno)."""
+    nombre_completo = _limpiar_nombre(nombre_completo)
     partes = nombre_completo.split()
     if len(partes) >= 3:
         return " ".join(partes[2:]), partes[0], partes[1]
@@ -116,6 +124,7 @@ def _separar_nombre_completo(nombre_completo: str):
 
 def _parsear_nombre_ruc10(texto: str):
     """Campo 'Número de RUC:' de un RUC 10 → 'RUC - APELLIDOS NOMBRES'."""
+    texto = _limpiar_nombre(texto)
     if " - " in texto:
         texto = texto.split(" - ", 1)[1].strip()
     return _separar_nombre_completo(texto)
