@@ -223,12 +223,16 @@ function rfEmpresa(d) {
     var h = "";
 
     // ── Header ──
-    h += '<div class="ficha-header"><div><div class="ficha-nombre">🏢 ' + es(e.nombre) + '</div><div class="ficha-dni">RUC: ' + es(e.ruc) + '</div>';
+    var rucBadge = e.ruc && e.ruc.charAt(0) === "1" ? "🔵 RUC 10" : "🔴 RUC 20";
+    h += '<div class="ficha-header"><div><div class="ficha-nombre">🏢 ' + es(e.nombre) + '</div><div class="ficha-dni">' + rucBadge + ' · ' + es(e.ruc) + '</div>';
     h += '<div class="ficha-meta">';
     if (e.estado) h += '<span class="status-badge status-' + es(e.estado.toLowerCase()) + '">' + es(e.estado) + '</span>';
+    else h += '<span class="status-badge" style="background:#e2e8f0;color:#64748b;">Estado —</span>';
     if (e.condicion) h += '<span>' + es(e.condicion) + '</span>';
     if (e.tipo_contribuyente) h += '<span>' + es(e.tipo_contribuyente) + '</span>';
-    if (e.direccion) h += '<span>📍 ' + es(e.direccion) + '</span>';
+    if (e.nombre_comercial) h += '<span>🏷 ' + es(e.nombre_comercial) + '</span>';
+    if (e.fecha_inicio_actividades) h += '<span>📅 Inicio: ' + es(e.fecha_inicio_actividades) + '</span>';
+    if (e.fecha_inscripcion) h += '<span>📋 Inscripción: ' + es(e.fecha_inscripcion) + '</span>';
     h += '</div></div><div class="ficha-actions">';
     h += '<button class="btn btn-outline btn-sm" onclick="abrirEtiquetaEmpresa(\x27' + es(e.ruc) + '\x27)">🏷 Etiquetar</button>';
     h += '<button class="btn btn-outline btn-sm" onclick="editarEmpresa(\x27' + es(e.ruc) + '\x27)">✏️ Editar</button>';
@@ -238,7 +242,10 @@ function rfEmpresa(d) {
     if (e.notas) h += '<div class="ficha-notas">📝 ' + es(e.notas) + '</div>';
 
     // ── Datos SUNAT ──
-    h += '<div class="section"><div class="section-title">📊 Datos SUNAT</div><div class="sunat-grid">';
+    h += '<div class="section"><div class="section-title">📊 Datos SUNAT <span style="font-weight:400;font-size:0.75rem;color:var(--color-text-secondary);">(completa con 🔄 SUNAT)</span></div><div class="sunat-grid">';
+    var placeholder = function(v) {
+        return v ? es(v) : '<span style="color:#94a3b8;font-style:italic;">— pendiente —</span>';
+    };
     var sunatFields = [
         { label: "Tipo Contribuyente", value: e.tipo_contribuyente },
         { label: "Nombre Comercial", value: e.nombre_comercial },
@@ -253,9 +260,14 @@ function rfEmpresa(d) {
         { label: "Comprobantes", value: e.comprobantes_autorizados },
         { label: "Sistema Emisión", value: e.sistema_emision },
         { label: "Afiliado PLE", value: e.afiliado_ple },
+        { label: "Sistema Emisión Electrónica", value: e.sistema_emision_electronica },
+        { label: "Emisor Electrónico Desde", value: e.emisor_electronico_desde },
+        { label: "Comprobantes Electrónicos", value: e.comprobantes_electronicos },
+        { label: "Padrones", value: e.padrones },
+        { label: "Establecimientos", value: e.establecimientos },
     ];
     sunatFields.forEach(function(f) {
-        if (f.value) h += '<div class="sunat-field"><span class="sunat-label">' + es(f.label) + ':</span><span class="sunat-value">' + es(f.value) + '</span></div>';
+        h += '<div class="sunat-field"><span class="sunat-label">' + es(f.label) + ':</span><span class="sunat-value">' + placeholder(f.value) + '</span></div>';
     });
     h += '</div></div>';
 
