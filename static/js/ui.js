@@ -719,6 +719,33 @@ document.getElementById("form-importar-empresas").addEventListener("submit", asy
 });
 
 /* ─── LEDER Telegram Import ─── */
+window.lederDropFiles = function(files) {
+    if (!files || files.length === 0) return;
+    var ta = document.getElementById("li-textarea");
+    var names = document.getElementById("li-file-names");
+    var namesList = [];
+    var total = files.length;
+    var loaded = 0;
+    names.textContent = "Leyendo " + total + " archivo(s)...";
+    for (var i = 0; i < total; i++) {
+        (function(file) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                // Append file content to textarea with separator
+                if (ta.value) ta.value += "\n\n--- " + file.name + " ---\n\n";
+                ta.value += e.target.result;
+                namesList.push(file.name);
+                loaded++;
+                names.textContent = "📄 " + namesList.join(", ");
+                if (loaded === total) {
+                    names.textContent = "✅ " + total + " archivo(s) cargados: " + namesList.join(", ");
+                }
+            };
+            reader.readAsText(file, "UTF-8");
+        })(files[i]);
+    }
+};
+
 document.getElementById("btn-importar-leder").addEventListener("click", function() {
     document.getElementById("form-importar-leder").reset();
     document.getElementById("li-resultado").classList.add("hidden");

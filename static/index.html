@@ -522,7 +522,21 @@ console.log("[BLOCK0] Login script executing");
                     <li>📞 <b>TELEFONOS / CORREOS / VEHICULOS</b> → datos de contacto como notas</li>
                 </ul>
                 <div class="form-group">
-                    <label for="li-textarea">Texto exportado de Telegram</label>
+                    <label>📂 Arrastra tus archivos HTML aquí o haz clic para seleccionar</label>
+                    <div id="li-dropzone" style="border:2px dashed var(--color-border);border-radius:12px;padding:30px;text-align:center;cursor:pointer;margin-bottom:12px;transition:all 0.2s;background:var(--color-bg);"
+                         ondragover="this.style.borderColor='var(--color-primary)';this.style.background='var(--color-bg-hover)';event.preventDefault();"
+                         ondragleave="this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)';"
+                         ondrop="event.preventDefault();lederDropFiles(event.dataTransfer.files);this.style.borderColor='var(--color-border)';this.style.background='var(--color-bg)';"
+                         onclick="document.getElementById('li-file-input').click();">
+                        <div style="font-size:2rem;margin-bottom:8px;">📁</div>
+                        <div style="font-weight:500;color:var(--color-text-secondary);">Suelta tus archivos HTML aquí</div>
+                        <div style="font-size:0.8rem;color:var(--color-text-tertiary);margin-top:4px;">o haz clic para seleccionar (3 archivos HTML)</div>
+                    </div>
+                    <input type="file" id="li-file-input" accept=".html,.htm,.txt" multiple style="display:none;" onchange="lederDropFiles(this.files);">
+                    <div id="li-file-names" style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:8px;"></div>
+                </div>
+                <div class="form-group">
+                    <label for="li-textarea">O pega el texto manualmente</label>
                     <textarea id="li-textarea" class="import-textarea" rows="20" placeholder="Pegue aqui el contenido de los archivos HTML exportados de Telegram..."></textarea>
                 </div>
                 <div id="li-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
