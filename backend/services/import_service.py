@@ -103,7 +103,9 @@ def _vincular_si_no_existe(db: Session, persona_id: int, empresa_id: int, cargo:
 
 
 def _limpiar_nombre(texto: str) -> str:
-    """Limpia caracteres especiales de nombres: comillas, asteriscos, etc."""
+    """Limpia caracteres especiales de nombres: comillas, asteriscos, etc.
+    Reemplaza '?' por 'Ñ' (error comun al exportar SUNAT donde Ñ → ?)."""
+    texto = texto.replace('?', 'Ñ')
     texto = re.sub(r'["\'*_]', '', texto)
     texto = re.sub(r'\s+', ' ', texto)
     return texto.strip()
