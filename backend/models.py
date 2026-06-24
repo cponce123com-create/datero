@@ -15,7 +15,7 @@ Define tablas principales:
 
 from sqlalchemy import (
     Column, Integer, String, Date, Boolean, ForeignKey,
-    Text, DateTime, UniqueConstraint, JSON,
+    Text, DateTime, UniqueConstraint, JSON, Index,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -141,6 +141,16 @@ class Relacion(Base):
         UniqueConstraint(
             "persona_origen_id", "persona_destino_id", "tipo_relacion",
             name="uq_relacion_origen_destino_tipo",
+        ),
+        # Indice compuesto para CTE de parentesco (recorrido A→B)
+        Index(
+            "idx_relaciones_origen_destino",
+            "persona_origen_id", "persona_destino_id",
+        ),
+        # Indice inverso para recorrido B→A (hijos, nietos)
+        Index(
+            "idx_relaciones_destino_origen",
+            "persona_destino_id", "persona_origen_id",
         ),
     )
 

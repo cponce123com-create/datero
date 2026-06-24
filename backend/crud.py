@@ -77,24 +77,41 @@ def obtener_persona_por_dni(db: Session, dni: str) -> Optional[Persona]:
 def buscar_personas(db: Session, query: str, limite: int = 20) -> List[Persona]:
     """
     Busca personas cuyo nombre, apellido o DNI contengan el texto.
-    El parámetro 'query' se busca con ILIKE para búsqueda sin distinción
-    de mayúsculas/minúsculas.
+    Usa pg_trgm (similitud) si existe, con fallback a ILIKE clasico.
     """
     patron = f"%{query}%"
-    return (
-        db.query(Persona)
-        .filter(
-            Persona.activo == True,
-            or_(
-                Persona.dni.ilike(patron),
-                Persona.nombres.ilike(patron),
-                Persona.apellido_paterno.ilike(patron),
-                Persona.apellido_materno.ilike(patron),
-            ),
-        )
-        .limit(limite)
-        .all()
-    )
+    try:
+        from sqlalchemy import text as sa_text
+        check = db.execute(sa_text(
+            "SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'"
+        )).first()
+        if check:
+            sql = sa_text("""
+                SELECT id, dni, nombres, apellido_paterno, apellido_materno,
+                       fecha_nacimiento, foto_url, notas, activo, creado_en
+                FROM personas
+                WHERE activo = true
+                  AND (dni ILIKE :pat OR nombres % :q
+                       OR apellido_paterno % :q OR apellido_materno % :q)
+                ORDER BY CASE WHEN dni = :q_exact THEN 0
+                         WHEN dni ILIKE :pat THEN 1 ELSE 2 END,
+                         similarity(nombres, :q) DESC
+                LIMIT :lim
+            """)
+            rows = db.execute(sql, {
+                "pat": patron, "q": query, "q_exact": query, "lim": limite
+            }).fetchall()
+            return [Persona(id=r[0], dni=r[1], nombres=r[2],
+                    apellido_paterno=r[3], apellido_materno=r[4],
+                    fecha_nacimiento=r[5], foto_url=r[6],
+                    notas=r[7], activo=r[8], creado_en=r[9]) for r in rows]
+    except Exception:
+        pass
+    return db.query(Persona).filter(Persona.activo == True, or_(
+        Persona.dni.ilike(patron), Persona.nombres.ilike(patron),
+        Persona.apellido_paterno.ilike(patron),
+        Persona.apellido_materno.ilike(patron),
+    )).limit(limite).all()
 
 
 def actualizar_persona(db: Session, dni: str, datos: PersonaUpdate) -> Optional[Persona]:

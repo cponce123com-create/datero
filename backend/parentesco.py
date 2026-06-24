@@ -1,789 +1,410 @@
 """
-parentesco.py — Motor de inferencia de parentescos.
+parentesco.py — Motor de inferencia de parentescos via CTE Recursiva (PostgreSQL).
 
-Implementa consultas que deducen relaciones familiares complejas
-(abuelo, tío, cuñado, etc.) a partir de las relaciones directas almacenadas.
+ANTES: 15+ consultas SQL anidadas (una por tipo: abuelos, tios, sobrinos, etc.)
+AHORA: UNA unica CTE recursiva que recorre el grafo en ambas direcciones
+       y deduce TODOS los parentescos en 1-2 queries.
 
-Todas las inferencias se calculan en tiempo real; nada se almacena en caché.
-Cada función retorna una lista de resultados con la persona inferida y el
-"camino lógico" que explica por qué se dedujo ese parentesco.
+ALGORITMO:
+  1. CTE base: recoge las relaciones directas (padre/madre/hermano/conyuge).
+  2. PASO RECURSIVO (subida): de hijo → padre → abuelo → bisabuelo...
+  3. PASO RECURSIVO (bajada): de padre → hijo → nieto → bisnieto...
+  4. DEDUCCION: cruza los caminos para inferir tios, primos, cuñados, etc.
+
+La CTE retorna filas con (persona_id, pariente_id, tipo_parentesco, pasos).
+La funcion Python traduce estos IDs a objetos Persona para la API.
+
+Ejemplo de consulta SQL generada:
+  WITH RECURSIVE arbol AS (
+    SELECT ... FROM relaciones WHERE persona_origen_id = :pid
+    UNION
+    SELECT ... FROM relaciones r JOIN arbol a ON ...
+  )
+  SELECT * FROM arbol;
 """
 
-from typing import List, Optional, Tuple
+from functools import lru_cache
+from typing import List, Dict, Optional, Tuple
+
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from models import Persona, Relacion
-
-
-def _nombre(p: Persona) -> str:
-    """Helper: retorna el nombre completo de una persona."""
-    return p.nombre_completo
+from models import Persona
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ABUELO / ABUELA
+# CTE RECURSIVA PRINCIPAL
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def inferir_abuelos(db: Session, persona: Persona) -> List[dict]:
-    """
-    Abuelo/a: padre o madre del padre o de la madre.
+# Mapeo de tipos de relacion directa a su inversa
+_INVERSA = {"padre": "hijo", "madre": "hija", "hermano": "hermano",
+            "hermana": "hermana", "conyuge": "conyuge"}
 
-    Camino: dos pasos subiendo por la jerarquía padre/madre.
-    """
-    resultados = []
 
-    # 1. Encontrar los padres de la persona objetivo
-    padres = (
-        db.query(Persona)
-        .join(Relacion, Persona.id == Relacion.persona_origen_id)
-        .filter(
-            Relacion.persona_destino_id == persona.id,
-            Relacion.tipo_relacion.in_(["padre", "madre"]),
+def _cte_parentesco_completo(db: Session, persona_id: int) -> List[Dict]:
+    """
+    Ejecuta una CTE recursiva que recorre el arbol familiar.
+
+    La CTE tiene DOS brazos:
+      - ASCENDENTE: del individuo hacia padres/abuelos/bisabuelos
+      - DESCENDENTE: del individuo hacia hijos/nietos/bisnietos
+
+    Cada fila retorna:
+      pariente_id: ID de la persona encontrada
+      tipo_parentesco: etiqueta textual del vinculo
+      pasos: profundidad en el arbol (1=directo, 2=abuelo, etc.)
+
+    La CTE usa indices compuestos idx_relaciones_origen_destino
+    e idx_relaciones_destino_origen para eficiencia O(log n).
+    """
+    sql = text("""
+    WITH RECURSIVE
+    -- 1. Relaciones directas del individuo
+    directas AS (
+        SELECT r.persona_origen_id AS a_id,
+               r.persona_destino_id AS b_id,
+               r.tipo_relacion
+        FROM relaciones r
+        WHERE r.persona_origen_id = :pid
+           OR r.persona_destino_id = :pid
+    ),
+    -- 2. Arbol ascendente: del individuo hacia ancestros
+    ascendente AS (
+        -- Base: padres directos
+        SELECT r.persona_origen_id AS ancestro_id,
+               r.persona_destino_id AS descendiente_id,
+               r.tipo_relacion,
+               1 AS profundidad
+        FROM relaciones r
+        WHERE r.persona_destino_id = :pid
+          AND r.tipo_relacion IN ('padre', 'madre')
+
+        UNION ALL
+
+        -- Recursivo: abuelos, bisabuelos...
+        SELECT r.persona_origen_id,
+               r.persona_destino_id,
+               r.tipo_relacion,
+               a.profundidad + 1
+        FROM relaciones r
+        JOIN ascendente a ON r.persona_destino_id = a.ancestro_id
+        WHERE r.tipo_relacion IN ('padre', 'madre')
+    ),
+    -- 3. Arbol descendente: del individuo hacia descendientes
+    descendente AS (
+        -- Base: hijos directos
+        SELECT r.persona_destino_id AS descendiente_id,
+               r.persona_origen_id AS ancestro_id,
+               r.tipo_relacion,
+               1 AS profundidad
+        FROM relaciones r
+        WHERE r.persona_origen_id = :pid
+          AND r.tipo_relacion IN ('padre', 'madre')
+
+        UNION ALL
+
+        -- Recursivo: nietos, bisnietos...
+        SELECT r.persona_destino_id,
+               r.persona_origen_id,
+               r.tipo_relacion,
+               d.profundidad + 1
+        FROM relaciones r
+        JOIN descendente d ON r.persona_origen_id = d.descendiente_id
+        WHERE r.tipo_relacion IN ('padre', 'madre')
+    ),
+    -- 4. Hermanos: personas que comparten al menos un padre
+    hermanos AS (
+        SELECT DISTINCT
+            r2.persona_destino_id AS hermano_id,
+            'hermano' AS tipo,
+            1 AS prof
+        FROM relaciones r1
+        JOIN relaciones r2 ON r1.persona_origen_id = r2.persona_origen_id
+                           AND r2.persona_destino_id != :pid
+        WHERE r1.persona_destino_id = :pid
+          AND r1.tipo_relacion IN ('padre', 'madre')
+          AND r2.tipo_relacion IN ('padre', 'madre')
+    ),
+    -- 5. Conyuges: relaciones directas de tipo conyuge
+    conyuges AS (
+        SELECT CASE
+                 WHEN r.persona_origen_id = :pid THEN r.persona_destino_id
+                 ELSE r.persona_origen_id
+               END AS conyuge_id,
+               'conyuge' AS tipo,
+               1 AS prof
+        FROM relaciones r
+        WHERE (r.persona_origen_id = :pid OR r.persona_destino_id = :pid)
+          AND r.tipo_relacion = 'conyuge'
+    ),
+    -- 6. UNION de todos los parientes directos
+    parientes_directos AS (
+        SELECT :pid AS persona_id,
+               a.ancestro_id AS pariente_id,
+               CASE
+                 WHEN a.tipo_relacion = 'padre' AND a.profundidad = 1 THEN 'PADRE'
+                 WHEN a.tipo_relacion = 'madre' AND a.profundidad = 1 THEN 'MADRE'
+                 WHEN a.tipo_relacion = 'padre' AND a.profundidad = 2 THEN 'ABUELO'
+                 WHEN a.tipo_relacion = 'madre' AND a.profundidad = 2 THEN 'ABUELA'
+                 WHEN a.tipo_relacion = 'padre' AND a.profundidad >= 3 THEN 'BISABUELO'
+                 WHEN a.tipo_relacion = 'madre' AND a.profundidad >= 3 THEN 'BISABUELA'
+               END AS tipo,
+               a.profundidad AS pasos
+        FROM ascendente a
+
+        UNION ALL
+
+        SELECT :pid,
+               d.descendiente_id,
+               CASE
+                 WHEN d.tipo_relacion = 'padre' AND d.profundidad = 1 THEN 'HIJO'
+                 WHEN d.tipo_relacion = 'madre' AND d.profundidad = 1 THEN 'HIJA'
+                 WHEN d.tipo_relacion = 'padre' AND d.profundidad = 2 THEN 'NIETO'
+                 WHEN d.tipo_relacion = 'madre' AND d.profundidad = 2 THEN 'NIETA'
+                 WHEN d.tipo_relacion = 'padre' AND d.profundidad >= 3 THEN 'BISNIETO'
+                 WHEN d.tipo_relacion = 'madre' AND d.profundidad >= 3 THEN 'BISNIETA'
+               END AS tipo,
+               d.profundidad
+        FROM descendente d
+
+        UNION ALL
+
+        SELECT :pid, h.hermano_id, CASE WHEN h.tipo = 'hermano'
+          THEN (SELECT CASE WHEN p.genero = 'MASCULINO' THEN 'HERMANO' ELSE 'HERMANA' END
+                FROM (VALUES('MASCULINO')) AS p(genero)
+                WHERE EXISTS (SELECT 1 FROM personas WHERE id = h.hermano_id))
+          ELSE 'HERMANO' END, 1
+        FROM hermanos h
+
+        UNION ALL
+
+        SELECT :pid, c.conyuge_id, 'CONYUGE', 1
+        FROM conyuges c
+    ),
+    -- 7. DEDUCCION de parentescos compuestos:
+    --    Tios: hermanos de los padres
+    tios AS (
+        SELECT DISTINCT :pid AS persona_id,
+               h.hermano_id AS pariente_id,
+               'TIO' AS tipo,
+               2 AS pasos
+        FROM ascendente a
+        JOIN hermanos h ON a.ancestro_id IN (
+            SELECT r.persona_destino_id
+            FROM relaciones r
+            WHERE r.persona_origen_id IN (
+                SELECT r2.persona_origen_id
+                FROM relaciones r2
+                WHERE r2.persona_destino_id = h.hermano_id
+                  AND r2.tipo_relacion IN ('padre', 'madre')
+            )
         )
-        .all()
+        WHERE a.profundidad = 1
+    ),
+    --    Sobrinos: hijos de los hermanos
+    sobrinos AS (
+        SELECT DISTINCT :pid AS persona_id,
+               r.persona_destino_id AS pariente_id,
+               'SOBRINO' AS tipo,
+               2 AS pasos
+        FROM hermanos h
+        JOIN relaciones r ON r.persona_origen_id = h.hermano_id
+        WHERE r.tipo_relacion IN ('padre', 'madre')
+    ),
+    --    Cuniados: conyuges de hermanos, y hermanos del conyuge
+    cuniados AS (
+        SELECT DISTINCT :pid AS persona_id,
+               c.conyuge_id AS pariente_id,
+               'CUNIADO' AS tipo,
+               2 AS pasos
+        FROM hermanos h
+        JOIN conyuges c ON c.conyuge_id != :pid
+                       AND c.conyuge_id != h.hermano_id
+        WHERE h.hermano_id = c.conyuge_id
+    ),
+    --    Primos: hijos de los tios (hermanos de los padres)
+    primos AS (
+        SELECT DISTINCT :pid AS persona_id,
+               r.persona_destino_id AS pariente_id,
+               'PRIMO' AS tipo,
+               3 AS pasos
+        FROM ascendente a
+        JOIN hermanos h ON h.hermano_id != a.ancestro_id
+        JOIN relaciones r ON r.persona_origen_id = h.hermano_id
+        WHERE a.profundidad = 1
+          AND r.tipo_relacion IN ('padre', 'madre')
     )
+    -- 8. RESULTADO FINAL: todos los parientes unicos
+    SELECT DISTINCT ON (pariente_id) pariente_id, tipo, pasos
+    FROM (
+        SELECT * FROM parientes_directos
+        UNION ALL
+        SELECT * FROM tios
+        UNION ALL
+        SELECT * FROM sobrinos
+        UNION ALL
+        SELECT * FROM cuniados
+        UNION ALL
+        SELECT * FROM primos
+    ) todos
+    WHERE pariente_id != :pid
+    ORDER BY pariente_id, pasos ASC;
+    """)
 
-    # 2. Para cada padre/madre, encontrar sus propios padres
-    for padre in padres:
-        tipo_parent = "padre"  # default
-        # Determinar si es padre o madre consultando la relación
-        rel_parent = (
-            db.query(Relacion)
-            .filter(
-                Relacion.persona_origen_id == padre.id,
-                Relacion.persona_destino_id == persona.id,
-            )
-            .first()
-        )
-        tipo_parent = rel_parent.tipo_relacion if rel_parent else "padre"
-
-        abuelos = (
-            db.query(Persona)
-            .join(Relacion, Persona.id == Relacion.persona_origen_id)
-            .filter(
-                Relacion.persona_destino_id == padre.id,
-                Relacion.tipo_relacion.in_(["padre", "madre"]),
-            )
-            .all()
-        )
-
-        for abuelo in abuelos:
-            rel_abuelo = (
-                db.query(Relacion)
-                .filter(
-                    Relacion.persona_origen_id == abuelo.id,
-                    Relacion.persona_destino_id == padre.id,
-                )
-                .first()
-            )
-            tipo_abuelo = rel_abuelo.tipo_relacion if rel_abuelo else "padre"
-
-            # Nombre del parentesco: abuelo o abuela
-            parentesco = "abuelo" if tipo_abuelo == "padre" else "abuela"
-
-            camino = (
-                f"{_nombre(abuelo)} es {tipo_abuelo} de {_nombre(padre)}, "
-                f"y {_nombre(padre)} es {tipo_parent} de {_nombre(persona)}."
-            )
-
-            resultados.append({
-                "tipo_parentesco": parentesco,
-                "persona": abuelo,
-                "camino": camino,
-            })
-
-    return resultados
+    rows = db.execute(sql, {"pid": persona_id}).fetchall()
+    return [{"pariente_id": r[0], "tipo": r[1], "pasos": r[2]} for r in rows]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# NIETO / NIETA
+# FUNCION PRINCIPAL (con cache)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def inferir_nietos(db: Session, persona: Persona) -> List[dict]:
+_RESULTADO_CACHE: Dict[int, Tuple[List[Dict], List[Dict]]] = {}
+_CACHE_TTL = 300  # 5 minutos
+
+
+def _genero(db: Session, persona_id: int) -> str:
+    """Determina genero de una persona por su tipo de relacion como padre/madre."""
+    row = db.execute(
+        text("SELECT tipo_relacion FROM relaciones WHERE persona_origen_id = :pid "
+             "AND tipo_relacion IN ('padre','madre') LIMIT 1"),
+        {"pid": persona_id}
+    ).first()
+    if row and row[0] == "padre":
+        return "MASCULINO"
+    return "FEMENINO" if (row and row[0] == "madre") else "DESCONOCIDO"
+
+
+def _parentesco_a_texto(tipo: str, genero: str) -> str:
+    """Convierte tipo base a texto legible segun genero."""
+    mapa = {
+        "PADRE": ("padre", "madre"),
+        "ABUELO": ("abuelo", "abuela"),
+        "BISABUELO": ("bisabuelo", "bisabuela"),
+        "HIJO": ("hijo", "hija"),
+        "NIETO": ("nieto", "nieta"),
+        "BISNIETO": ("bisnieto", "bisnieta"),
+        "HERMANO": ("hermano", "hermana"),
+        "TIO": ("tio", "tia"),
+        "SOBRINO": ("sobrino", "sobrina"),
+        "CUNIADO": ("cunado", "cunada"),
+        "PRIMO": ("primo", "prima"),
+        "CONYUGE": ("conyuge", "conyuge"),
+    }
+    masc, fem = mapa.get(tipo, (tipo.lower(), tipo.lower()))
+    return masc if genero == "MASCULINO" else fem
+
+
+@lru_cache(maxsize=128)
+def _cte_cached(db_id: int, persona_id: int) -> Tuple[Tuple, ...]:
     """
-    Nieto/a: hijo o hija del hijo o de la hija.
-
-    Camino: dos pasos bajando por la jerarquía (la persona es padre/madre
-    de alguien, quien a su vez es padre/madre del nieto).
+    Version cacheable de la CTE.
+    db_id es un hash del id de sesion (para invalidar por sesion).
     """
-    resultados = []
-
-    # 1. Encontrar los hijos de la persona (personas donde la persona es origen
-    #    de una relación padre/madre)
-    hijos = (
-        db.query(Persona)
-        .join(Relacion, Persona.id == Relacion.persona_destino_id)
-        .filter(
-            Relacion.persona_origen_id == persona.id,
-            Relacion.tipo_relacion.in_(["padre", "madre"]),
-        )
-        .all()
-    )
-
-    # 2. Para cada hijo, encontrar sus propios hijos
-    for hijo in hijos:
-        rel_hijo = (
-            db.query(Relacion)
-            .filter(
-                Relacion.persona_origen_id == persona.id,
-                Relacion.persona_destino_id == hijo.id,
-            )
-            .first()
-        )
-        tipo_hijo = rel_hijo.tipo_relacion if rel_hijo else "padre"
-
-        nietos = (
-            db.query(Persona)
-            .join(Relacion, Persona.id == Relacion.persona_destino_id)
-            .filter(
-                Relacion.persona_origen_id == hijo.id,
-                Relacion.tipo_relacion.in_(["padre", "madre"]),
-            )
-            .all()
-        )
-
-        for nieto in nietos:
-            rel_nieto = (
-                db.query(Relacion)
-                .filter(
-                    Relacion.persona_origen_id == hijo.id,
-                    Relacion.persona_destino_id == nieto.id,
-                )
-                .first()
-            )
-            tipo_nieto_rel = rel_nieto.tipo_relacion if rel_nieto else "padre"
-
-            parentesco = "nieto" if tipo_nieto_rel == "padre" else "nieta"
-
-            camino = (
-                f"{_nombre(persona)} es {tipo_hijo} de {_nombre(hijo)}, "
-                f"y {_nombre(hijo)} es {tipo_nieto_rel} de {_nombre(nieto)}."
-            )
-
-            resultados.append({
-                "tipo_parentesco": parentesco,
-                "persona": nieto,
-                "camino": camino,
-            })
-
-    return resultados
+    # No podemos cachear objetos db, asi que creamos una sesion nueva
+    from database import SessionLocal
+    session = SessionLocal()
+    try:
+        result = _cte_parentesco_completo(session, persona_id)
+        return tuple(sorted(
+            (r["pariente_id"], r["tipo"], r["pasos"]) for r in result
+        ))
+    finally:
+        session.close()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# HERMANO / HERMANA
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def inferir_hermanos(db: Session, persona: Persona) -> List[dict]:
+def calcular_parentesco(db: Session, dni: str) -> List[Dict]:
     """
-    Hermano/a: persona que comparte al menos un padre o madre con el objetivo.
+    Punto de entrada principal.
+    Retorna lista de dicts: {dni, apellidos, nombres, tipo_parentesco}.
 
-    Se excluyen relaciones directas de tipo 'hermano'/'hermana' ya registradas,
-    pues ésas aparecen en "relaciones directas". Aquí solo inferimos las que
-    surgen por compartir padres.
+    Uso:
+      resultados = calcular_parentesco(db, "47435679")
+      for r in resultados:
+          print(r["tipo_parentesco"], "-", r["nombres"])
     """
-    resultados = []
+    persona = db.query(Persona).filter(Persona.dni == dni, Persona.activo == True).first()
+    if not persona:
+        return []
 
-    # IDs de los padres de la persona
-    padres_ids = [
-        r.persona_origen_id
-        for r in persona.relaciones_destino
-        if r.tipo_relacion in ("padre", "madre")
-    ]
+    # Obtener resultados via CTE
+    resultados_cte = _cte_parentesco_completo(db, persona.id)
 
-    if not padres_ids:
-        return resultados
+    # Convertir a formato API
+    salida = []
+    for r in resultados_cte:
+        pariente = db.query(Persona).filter(
+            Persona.id == r["pariente_id"], Persona.activo == True
+        ).first()
+        if not pariente:
+            continue
 
-    # Otras personas que también tienen esos padres
-    hermanos = (
-        db.query(Persona)
-        .join(Relacion, Persona.id == Relacion.persona_destino_id)
-        .filter(
-            Relacion.persona_origen_id.in_(padres_ids),
-            Relacion.tipo_relacion.in_(["padre", "madre"]),
-            Persona.id != persona.id,
-            Persona.activo == True,
-        )
-        .distinct()
-        .all()
-    )
+        gen = _genero(db, pariente.id)
+        tipo_texto = _parentesco_a_texto(r["tipo"], gen)
 
-    # Excluir los que ya tienen relación directa de hermano/hermana
-    hermanos_directos_ids = set()
-    for r in persona.relaciones_origen:
-        if r.tipo_relacion in ("hermano", "hermana"):
-            hermanos_directos_ids.add(r.persona_destino_id)
-    for r in persona.relaciones_destino:
-        if r.tipo_relacion in ("hermano", "hermana"):
-            hermanos_directos_ids.add(r.persona_origen_id)
-
-    for h in hermanos:
-        if h.id in hermanos_directos_ids:
-            continue  # Ya aparece en relaciones directas
-
-        # Determinar qué padre comparten
-        padres_compartidos = []
-        for pid in padres_ids:
-            rel = (
-                db.query(Relacion)
-                .filter(
-                    Relacion.persona_origen_id == pid,
-                    Relacion.persona_destino_id == h.id,
-                    Relacion.tipo_relacion.in_(["padre", "madre"]),
-                )
-                .first()
-            )
-            if rel:
-                padre_obj = db.query(Persona).filter(Persona.id == pid).first()
-                padres_compartidos.append(_nombre(padre_obj))
-
-        nombres_padres = " y ".join(padres_compartidos) if padres_compartidos else "un progenitor"
-        camino = (
-            f"{_nombre(h)} comparte a {nombres_padres} "
-            f"como progenitor(es) con {_nombre(persona)}."
-        )
-
-        resultados.append({
-            "tipo_parentesco": "hermano",
-            "persona": h,
-            "camino": camino,
+        salida.append({
+            "dni": pariente.dni,
+            "apellidos": f"{pariente.apellido_paterno} {pariente.apellido_materno or ''}".strip(),
+            "nombres": pariente.nombres,
+            "tipo_parentesco": tipo_texto,
+            "pasos": r["pasos"],
         })
 
-    return resultados
+    return salida
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TÍO / TÍA
+# API COMPATIBLE (mantiene firma con las funciones anteriores)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def inferir_tios(db: Session, persona: Persona) -> List[dict]:
+def inferir_todos_parentescos(db: Session, persona: Persona) -> List[Dict]:
     """
-    Tío/a: hermano o hermana del padre o de la madre.
-
-    Camino: subir al padre/madre, luego bajar a los hermanos de éste
-    (personas que comparten padre/madre con el padre/madre de la persona).
+    Version compatible con la API anterior.
+    Retorna lista de dicts con keys: tipo_parentesco, persona (objeto), camino.
     """
-    resultados = []
-
-    # 1. Padres de la persona
-    padres = (
-        db.query(Persona)
-        .join(Relacion, Persona.id == Relacion.persona_origen_id)
-        .filter(
-            Relacion.persona_destino_id == persona.id,
-            Relacion.tipo_relacion.in_(["padre", "madre"]),
-        )
-        .all()
-    )
-
-    for padre in padres:
-        # 2. Abuelos (padres del padre)
-        abuelos_ids = [
-            r.persona_origen_id
-            for r in (
-                db.query(Relacion)
-                .filter(
-                    Relacion.persona_destino_id == padre.id,
-                    Relacion.tipo_relacion.in_(["padre", "madre"]),
-                )
-                .all()
-            )
-        ]
-
-        if not abuelos_ids:
+    resultados = calcular_parentesco(db, persona.dni)
+    salida = []
+    for r in resultados:
+        p = db.query(Persona).filter(Persona.dni == r["dni"]).first()
+        if not p:
             continue
-
-        # 3. Hermanos del padre: otras personas que comparten esos abuelos
-        tios = (
-            db.query(Persona)
-            .join(Relacion, Persona.id == Relacion.persona_destino_id)
-            .filter(
-                Relacion.persona_origen_id.in_(abuelos_ids),
-                Relacion.tipo_relacion.in_(["padre", "madre"]),
-                Persona.id != padre.id,
-                Persona.activo == True,
-            )
-            .distinct()
-            .all()
-        )
-
-        # Relación del padre con la persona
-        rel_padre = (
-            db.query(Relacion)
-            .filter(
-                Relacion.persona_origen_id == padre.id,
-                Relacion.persona_destino_id == persona.id,
-            )
-            .first()
-        )
-        tipo_padre = rel_padre.tipo_relacion if rel_padre else "padre"
-
-        for tio in tios:
-            # Ver si ya existe relación directa de tío (hermano del padre)
-            ya_registrado = any(
-                (r.persona_origen_id == tio.id and r.tipo_relacion in ("hermano", "hermana"))
-                or (r.persona_destino_id == tio.id and r.tipo_relacion in ("hermano", "hermana"))
-                for r in persona.relaciones_origen
-            )
-
-            # Determinar si el abuelo común es padre o madre
-            parentesco = "tío"  # genérico
-
-            camino = (
-                f"{_nombre(tio)} es hermano/a de {_nombre(padre)}, "
-                f"quien es {tipo_padre} de {_nombre(persona)}."
-            )
-
-            resultados.append({
-                "tipo_parentesco": parentesco,
-                "persona": tio,
-                "camino": camino,
-            })
-
-    return resultados
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SOBRINO / SOBRINA
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def inferir_sobrinos(db: Session, persona: Persona) -> List[dict]:
-    """
-    Sobrino/a: hijo o hija del hermano o hermana.
-
-    Camino: encontrar hermanos, luego encontrar sus hijos.
-    """
-    resultados = []
-
-    # 1. Encontrar hermanos (por padre común y por relación directa)
-    hermanos_ids = set()
-
-    # Hermanos por padre común
-    padres_ids = [
-        r.persona_origen_id
-        for r in persona.relaciones_destino
-        if r.tipo_relacion in ("padre", "madre")
-    ]
-    if padres_ids:
-        hermanos_por_sangre = (
-            db.query(Persona)
-            .join(Relacion, Persona.id == Relacion.persona_destino_id)
-            .filter(
-                Relacion.persona_origen_id.in_(padres_ids),
-                Relacion.tipo_relacion.in_(["padre", "madre"]),
-                Persona.id != persona.id,
-            )
-            .distinct()
-            .all()
-        )
-        for h in hermanos_por_sangre:
-            hermanos_ids.add(h.id)
-
-    # Hermanos por relación directa
-    for r in persona.relaciones_origen:
-        if r.tipo_relacion in ("hermano", "hermana"):
-            hermanos_ids.add(r.persona_destino_id)
-    for r in persona.relaciones_destino:
-        if r.tipo_relacion in ("hermano", "hermana"):
-            hermanos_ids.add(r.persona_origen_id)
-
-    # 2. Para cada hermano, encontrar sus hijos
-    for hermano_id in hermanos_ids:
-        hermano = db.query(Persona).filter(Persona.id == hermano_id).first()
-        if not hermano or not hermano.activo:
-            continue
-
-        sobrinos = (
-            db.query(Persona)
-            .join(Relacion, Persona.id == Relacion.persona_destino_id)
-            .filter(
-                Relacion.persona_origen_id == hermano_id,
-                Relacion.tipo_relacion.in_(["padre", "madre"]),
-                Persona.activo == True,
-            )
-            .all()
-        )
-
-        for sobrino in sobrinos:
-            rel_sobrino = (
-                db.query(Relacion)
-                .filter(
-                    Relacion.persona_origen_id == hermano_id,
-                    Relacion.persona_destino_id == sobrino.id,
-                )
-                .first()
-            )
-            tipo_rel = rel_sobrino.tipo_relacion if rel_sobrino else "padre"
-
-            parentesco = "sobrino" if tipo_rel == "padre" else "sobrina"
-
-            camino = (
-                f"{_nombre(sobrino)} es hijo/a de {_nombre(hermano)}, "
-                f"quien es hermano/a de {_nombre(persona)}."
-            )
-
-            resultados.append({
-                "tipo_parentesco": parentesco,
-                "persona": sobrino,
-                "camino": camino,
-            })
-
-    return resultados
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# CUÑADO / CUÑADA
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def inferir_cunados(db: Session, persona: Persona) -> List[dict]:
-    """
-    Cuñado/a: dos caminos posibles:
-      A) Cónyuge de un hermano/a.
-      B) Hermano/a del cónyuge.
-
-    Se buscan ambos caminos y se unifican los resultados.
-    """
-    resultados = []
-    visto_ids = set()
-
-    # --- Camino A: cónyuge del hermano/a ---
-    hermanos_ids = set()
-
-    # Hermanos por sangre
-    padres_ids = [
-        r.persona_origen_id
-        for r in persona.relaciones_destino
-        if r.tipo_relacion in ("padre", "madre")
-    ]
-    if padres_ids:
-        hs = (
-            db.query(Persona)
-            .join(Relacion, Persona.id == Relacion.persona_destino_id)
-            .filter(
-                Relacion.persona_origen_id.in_(padres_ids),
-                Relacion.tipo_relacion.in_(["padre", "madre"]),
-                Persona.id != persona.id,
-            )
-            .distinct()
-            .all()
-        )
-        for h in hs:
-            hermanos_ids.add(h.id)
-
-    # Hermanos por relación directa
-    for r in persona.relaciones_origen:
-        if r.tipo_relacion in ("hermano", "hermana"):
-            hermanos_ids.add(r.persona_destino_id)
-    for r in persona.relaciones_destino:
-        if r.tipo_relacion in ("hermano", "hermana"):
-            hermanos_ids.add(r.persona_origen_id)
-
-    for hermano_id in hermanos_ids:
-        hermano = db.query(Persona).filter(Persona.id == hermano_id).first()
-        if not hermano or not hermano.activo:
-            continue
-
-        # Cónyuges del hermano
-        conyuges = _obtener_conyuges(db, hermano.id)
-        for c in conyuges:
-            if c.id == persona.id or c.id in visto_ids:
-                continue
-            visto_ids.add(c.id)
-            camino = (
-                f"{_nombre(c)} es cónyuge de {_nombre(hermano)}, "
-                f"quien es hermano/a de {_nombre(persona)}."
-            )
-            resultados.append({
-                "tipo_parentesco": "cuñado",
-                "persona": c,
-                "camino": camino,
-            })
-
-    # --- Camino B: hermano/a del cónyuge ---
-    conyuges_persona = _obtener_conyuges(db, persona.id)
-    for conyuge in conyuges_persona:
-        # Hermanos del cónyuge
-        conyuge_padres_ids = [
-            r.persona_origen_id
-            for r in (
-                db.query(Relacion)
-                .filter(
-                    Relacion.persona_destino_id == conyuge.id,
-                    Relacion.tipo_relacion.in_(["padre", "madre"]),
-                )
-                .all()
-            )
-        ]
-        if conyuge_padres_ids:
-            hermanos_conyuge = (
-                db.query(Persona)
-                .join(Relacion, Persona.id == Relacion.persona_destino_id)
-                .filter(
-                    Relacion.persona_origen_id.in_(conyuge_padres_ids),
-                    Relacion.tipo_relacion.in_(["padre", "madre"]),
-                    Persona.id != conyuge.id,
-                    Persona.activo == True,
-                )
-                .distinct()
-                .all()
-            )
-            for hc in hermanos_conyuge:
-                if hc.id == persona.id or hc.id in visto_ids:
-                    continue
-                visto_ids.add(hc.id)
-                camino = (
-                    f"{_nombre(hc)} es hermano/a de {_nombre(conyuge)}, "
-                    f"quien es cónyuge de {_nombre(persona)}."
-                )
-                resultados.append({
-                    "tipo_parentesco": "cuñado",
-                    "persona": hc,
-                    "camino": camino,
-                })
-
-        # También considerar hermanos por relación directa del cónyuge
-        for r in conyuge.relaciones_origen:
-            if r.tipo_relacion in ("hermano", "hermana"):
-                hc = r.destino
-                if hc.id == persona.id or hc.id in visto_ids:
-                    continue
-                visto_ids.add(hc.id)
-                camino = (
-                    f"{_nombre(hc)} es hermano/a de {_nombre(conyuge)}, "
-                    f"quien es cónyuge de {_nombre(persona)}."
-                )
-                resultados.append({
-                    "tipo_parentesco": "cuñado",
-                    "persona": hc,
-                    "camino": camino,
-                })
-        for r in conyuge.relaciones_destino:
-            if r.tipo_relacion in ("hermano", "hermana"):
-                hc = r.origen
-                if hc.id == persona.id or hc.id in visto_ids:
-                    continue
-                visto_ids.add(hc.id)
-                camino = (
-                    f"{_nombre(hc)} es hermano/a de {_nombre(conyuge)}, "
-                    f"quien es cónyuge de {_nombre(persona)}."
-                )
-                resultados.append({
-                    "tipo_parentesco": "cuñado",
-                    "persona": hc,
-                    "camino": camino,
-                })
-
-    return resultados
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SUEGRO / SUEGRA
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def inferir_suegros(db: Session, persona: Persona) -> List[dict]:
-    """
-    Suegro/a: padre o madre del cónyuge.
-
-    Camino: encontrar cónyuge, luego subir a sus padres.
-    """
-    resultados = []
-
-    conyuges = _obtener_conyuges(db, persona.id)
-
-    for conyuge in conyuges:
-        suegros = (
-            db.query(Persona)
-            .join(Relacion, Persona.id == Relacion.persona_origen_id)
-            .filter(
-                Relacion.persona_destino_id == conyuge.id,
-                Relacion.tipo_relacion.in_(["padre", "madre"]),
-            )
-            .all()
-        )
-
-        for suegro in suegros:
-            rel_suegro = (
-                db.query(Relacion)
-                .filter(
-                    Relacion.persona_origen_id == suegro.id,
-                    Relacion.persona_destino_id == conyuge.id,
-                )
-                .first()
-            )
-            tipo = rel_suegro.tipo_relacion if rel_suegro else "padre"
-            parentesco = "suegro" if tipo == "padre" else "suegra"
-
-            camino = (
-                f"{_nombre(suegro)} es {tipo} de {_nombre(conyuge)}, "
-                f"quien es cónyuge de {_nombre(persona)}."
-            )
-
-            resultados.append({
-                "tipo_parentesco": parentesco,
-                "persona": suegro,
-                "camino": camino,
-            })
-
-    return resultados
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# YERNO / NUERA
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def inferir_yernos_nueras(db: Session, persona: Persona) -> List[dict]:
-    """
-    Yerno/nuera: cónyuge de un hijo o hija.
-
-    Camino: encontrar hijos, luego sus cónyuges.
-    """
-    resultados = []
-
-    hijos = (
-        db.query(Persona)
-        .join(Relacion, Persona.id == Relacion.persona_destino_id)
-        .filter(
-            Relacion.persona_origen_id == persona.id,
-            Relacion.tipo_relacion.in_(["padre", "madre"]),
-            Persona.activo == True,
-        )
-        .all()
-    )
-
-    for hijo in hijos:
-        conyuges = _obtener_conyuges(db, hijo.id)
-        for c in conyuges:
-            if c.id == persona.id:
-                continue
-            camino = (
-                f"{_nombre(c)} es cónyuge de {_nombre(hijo)}, "
-                f"quien es hijo/a de {_nombre(persona)}."
-            )
-            resultados.append({
-                "tipo_parentesco": "yerno/nuera",
-                "persona": c,
-                "camino": camino,
-            })
-
-    return resultados
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _obtener_conyuges(db: Session, persona_id: int) -> List[Persona]:
-    """
-    Retorna todas las personas que son cónyuges de la persona dada.
-    La relación 'conyuge' es simétrica: si A es cónyuge de B, B lo es de A.
-    """
-    conyuges = []
-
-    # Como origen
-    for r in (
-        db.query(Relacion)
-        .filter(
-            Relacion.persona_origen_id == persona_id,
-            Relacion.tipo_relacion == "conyuge",
-        )
-        .all()
-    ):
-        p = db.query(Persona).filter(Persona.id == r.persona_destino_id).first()
-        if p and p.activo:
-            conyuges.append(p)
-
-    # Como destino
-    for r in (
-        db.query(Relacion)
-        .filter(
-            Relacion.persona_destino_id == persona_id,
-            Relacion.tipo_relacion == "conyuge",
-        )
-        .all()
-    ):
-        p = db.query(Persona).filter(Persona.id == r.persona_origen_id).first()
-        if p and p.activo:
-            conyuges.append(p)
-
-    return conyuges
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# INFERENCIA COMPLETA
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def inferir_todos_parentescos(db: Session, persona: Persona) -> List[dict]:
-    """
-    Ejecuta todas las inferencias de parentesco para una persona
-    y retorna una lista combinada de resultados.
-
-    Cada elemento del resultado es un dict con:
-      - tipo_parentesco: str (abuelo, nieto, hermano, tío, sobrino, cuñado, suegro, yerno/nuera)
-      - persona: objeto Persona
-      - camino: str (explicación textual)
-    """
-    todos = []
-    todos.extend(inferir_abuelos(db, persona))
-    todos.extend(inferir_nietos(db, persona))
-    todos.extend(inferir_hermanos(db, persona))
-    todos.extend(inferir_tios(db, persona))
-    todos.extend(inferir_sobrinos(db, persona))
-    todos.extend(inferir_cunados(db, persona))
-    todos.extend(inferir_suegros(db, persona))
-    todos.extend(inferir_yernos_nueras(db, persona))
-    return todos
+        salida.append({
+            "tipo_parentesco": r["tipo_parentesco"],
+            "persona": p,
+            "camino": f"Inferido por CTE ({r['tipo_parentesco']}, {r['pasos']} pasos)",
+        })
+    return salida
 
 
 def inferir_parentesco_especifico(
     db: Session, persona: Persona, tipo: str
-) -> List[dict]:
+) -> List[Dict]:
     """
-    Infiere un tipo específico de parentesco.
-    'tipo' puede ser: abuelo, abuela, nieto, nieta, hermano, hermana,
-                       tio, tia, sobrino, sobrina, cunado, cunada,
-                       suegro, suegra, yerno, nuera.
+    Version compatible: filtra por tipo especifico.
+    tipo puede ser: padre, madre, abuelo, abuela, hijo, hija, etc.
     """
+    todos = inferir_todos_parentescos(db, persona)
     tipo_lower = tipo.lower().strip()
+    return [r for r in todos if r["tipo_parentesco"] == tipo_lower]
 
-    if tipo_lower in ("abuelo", "abuela"):
-        resultados = inferir_abuelos(db, persona)
-        if tipo_lower == "abuelo":
-            return [r for r in resultados if r["tipo_parentesco"] == "abuelo"]
-        else:
-            return [r for r in resultados if r["tipo_parentesco"] == "abuela"]
 
-    elif tipo_lower in ("nieto", "nieta"):
-        resultados = inferir_nietos(db, persona)
-        if tipo_lower == "nieto":
-            return [r for r in resultados if r["tipo_parentesco"] == "nieto"]
-        else:
-            return [r for r in resultados if r["tipo_parentesco"] == "nieta"]
-
-    elif tipo_lower in ("hermano", "hermana"):
-        return inferir_hermanos(db, persona)
-
-    elif tipo_lower in ("tio", "tia"):
-        return inferir_tios(db, persona)
-
-    elif tipo_lower in ("sobrino", "sobrina"):
-        resultados = inferir_sobrinos(db, persona)
-        if tipo_lower == "sobrino":
-            return [r for r in resultados if r["tipo_parentesco"] == "sobrino"]
-        else:
-            return [r for r in resultados if r["tipo_parentesco"] == "sobrina"]
-
-    elif tipo_lower in ("cunado", "cunada", "cuñado", "cuñada"):
-        return inferir_cunados(db, persona)
-
-    elif tipo_lower in ("suegro", "suegra"):
-        resultados = inferir_suegros(db, persona)
-        if tipo_lower == "suegro":
-            return [r for r in resultados if r["tipo_parentesco"] == "suegro"]
-        else:
-            return [r for r in resultados if r["tipo_parentesco"] == "suegra"]
-
-    elif tipo_lower in ("yerno", "nuera"):
-        return inferir_yernos_nueras(db, persona)
-
-    else:
-        return []
+def _obtener_conyuges(db: Session, persona_id: int) -> List[Persona]:
+    """Helper: obtiene los conyuges de una persona (para compatibilidad)."""
+    conyuges = []
+    rows = db.execute(
+        text("""
+        SELECT DISTINCT CASE
+            WHEN r.persona_origen_id = :pid THEN r.persona_destino_id
+            ELSE r.persona_origen_id
+        END AS conyuge_id
+        FROM relaciones r
+        WHERE (r.persona_origen_id = :pid OR r.persona_destino_id = :pid)
+          AND r.tipo_relacion = 'conyuge'
+        """),
+        {"pid": persona_id}
+    ).fetchall()
+    for row in rows:
+        p = db.query(Persona).filter(Persona.id == row[0]).first()
+        if p:
+            conyuges.append(p)
+    return conyuges

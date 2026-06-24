@@ -74,47 +74,18 @@ limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    Lifespan simplificado: ya no ejecuta DDL (migraciones via Alembic).
+    Solo crea el usuario admin por defecto si no existe.
+    """
     db = next(get_db())
     try:
         seed_usuario_admin(db)
-        # Auto-migrate: agregar columnas nuevas si no existen
-        # y extender columnas existentes para soportar datos SUNAT
+        # Activar pg_trgm (no bloquea, es CREATE IF NOT EXISTS)
         from sqlalchemy import text as sa_text
         from database import engine as _eng
         with _eng.connect() as c:
-            # Nuevas columnas SUNAT
-            nuevas_cols = [
-                ("sistema_emision_electronica", "TEXT"),
-                ("emisor_electronico_desde", "VARCHAR(20)"),
-                ("comprobantes_electronicos", "TEXT"),
-                ("padrones", "TEXT"),
-                ("establecimientos", "TEXT"),
-            ]
-            for col, typ in nuevas_cols:
-                c.execute(sa_text(
-                    f"ALTER TABLE empresas ADD COLUMN IF NOT EXISTS {col} {typ}"
-                ))
-            # Extender columnas existentes que se quedan cortas con datos SUNAT
-            # (VARCHAR(50) original no alcanza para direcciones largas, etc.)
-            cambios_columna = [
-                ("direccion", "TEXT"),
-                ("estado", "TEXT"),
-                ("condicion", "TEXT"),
-                ("nombre_comercial", "TEXT"),
-                ("tipo_contribuyente", "TEXT"),
-                ("actividad_economica", "TEXT"),
-                ("comprobantes_autorizados", "TEXT"),
-                ("sistema_emision", "TEXT"),
-                ("sistema_contabilidad", "TEXT"),
-                ("actividad_comercio_exterior", "TEXT"),
-                ("afiliado_ple", "VARCHAR(50)"),
-                ("representante_legal_nombre", "VARCHAR(300)"),
-                ("representante_legal_dni", "VARCHAR(20)"),
-            ]
-            for col, new_type in cambios_columna:
-                c.execute(sa_text(
-                    f"ALTER TABLE empresas ALTER COLUMN {col} TYPE {new_type}"
-                ))
+            c.execute(sa_text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
             c.commit()
     finally:
         db.close()
@@ -184,7 +155,8 @@ def api_auth_me(user: Usuario = Depends(get_current_user)):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/personas", response_model=PersonaOut, status_code=status.HTTP_201_CREATED)
-def api_crear_persona(datos: PersonaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+@limiter.limit("10/minute")
+def api_crear_persona(request: Request, datos: PersonaCreate, db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     try:
         persona = crear_persona_con_etiqueta(db, datos, user.id, user.username)
         return persona
@@ -193,7 +165,8 @@ def api_crear_persona(datos: PersonaCreate, db: Session = Depends(get_db), user:
 
 
 @app.get("/api/personas", response_model=BusquedaPersonaOut)
-def api_buscar_personas(q: str = Query(..., min_length=1), limite: int = Query(20, ge=1, le=100), db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
+@limiter.limit("30/minute")
+def api_buscar_personas(request: Request, q: str = Query(..., min_length=1), limite: int = Query(20, ge=1, le=100), db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
     resultados = buscar_personas(db, q, limite)
     return BusquedaPersonaOut(resultados=[PersonaBrief.model_validate(p) for p in resultados], total=len(resultados))
 

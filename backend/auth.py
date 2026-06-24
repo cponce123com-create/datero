@@ -5,12 +5,10 @@ Flujo:
 1. POST /api/auth/login con {username, password} → devuelve JWT token.
 2. Los endpoints protegen con dependencia get_current_user (Bearer JWT).
 3. Dependencia requiere_rol("admin") para endpoints de escritura.
-4. Rate limiting con slowapi en login.
 
-SEGURIDAD: JWT_SECRET es obligatorio via variable de entorno.
+SEGURIDAD: JWT_SECRET se lee desde config.py (variable de entorno).
 """
 
-import os
 import warnings
 from datetime import datetime, timedelta, timezone
 
@@ -22,17 +20,16 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Usuario
+from config import settings
 
 # ─── Configuración JWT ─────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get("JWT_SECRET")
+SECRET_KEY = settings.JWT_SECRET
+ALGORITHM = settings.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_HOURS = settings.JWT_EXPIRATION_HOURS
+
 if not SECRET_KEY:
-    SECRET_KEY = "dev-secret-CHANGE-IN-PRODUCTION"
-    warnings.warn(
-        "JWT_SECRET no configurada. Usando valor inseguro de desarrollo.",
-        stacklevel=2,
-    )
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 horas
+    raise ValueError("JWT_SECRET no configurado en variables de entorno")
+
 
 # ─── Security scheme ────────────────────────────────────────────────────────
 security_bearer = HTTPBearer(auto_error=False)
@@ -59,7 +56,7 @@ def verificar_password(plain: str, hashed: str) -> bool:
 
 def crear_token(username: str, usuario_id: int, rol: str) -> str:
     """Crea un JWT token para el usuario."""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     payload = {
         "sub": username,
         "id": usuario_id,
