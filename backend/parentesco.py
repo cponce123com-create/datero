@@ -286,7 +286,11 @@ def calcular_parentesco(db: Session, dni: str) -> List[Dict]:
             continue
 
         # Genero: del campo o inferido
-        gen = pariente.genero
+        gen = "DESCONOCIDO"
+        try:
+            gen = pariente.genero
+        except Exception:
+            pass
         if not gen:
             if pariente_id not in genero_cache:
                 genero_cache[pariente_id] = _inferir_genero(db, pariente_id)
