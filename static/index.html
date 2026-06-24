@@ -63,6 +63,7 @@ console.log("[BLOCK0] Login script executing");
                 <button id="btn-importar" class="btn btn-outline btn-sm">📥 Importar</button>
                 <button id="btn-importar-inteligente" class="btn btn-primary btn-sm">🧠 Importar</button>
                 <button id="btn-importar-empresas" class="btn btn-outline btn-sm">📥 + Empresas SUNAT</button>
+                <button id="btn-importar-leder" class="btn btn-outline btn-sm">🤖 LEDER</button>
                 <button id="btn-reset" class="btn btn-danger btn-sm" style="background:#dc2626;color:#fff;border:none;">🗑 Reset</button>
                 <button id="btn-dashboard" class="btn btn-primary btn-sm">📊 Dashboard</button>
             </nav>
@@ -494,6 +495,40 @@ console.log("[BLOCK0] Login script executing");
                 <div class="modal-actions">
                     <button type="button" class="btn btn-ghost" data-close="modal-importar-empresas">Cerrar</button>
                     <button type="submit" class="btn btn-primary">Importar Empresas</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: IMPORTAR LEDER TELEGRAM ═══ -->
+    <div id="modal-importar-leder" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>🤖 Importar LEDER DATA (Telegram)</h2>
+                <button class="modal-close" data-close="modal-importar-leder">&times;</button>
+            </div>
+            <form id="form-importar-leder" class="modal-form">
+                <p class="import-info">
+                    Pegue el texto exportado de Telegram con las respuestas del bot
+                    <b>@LEDER_DATA_BOT</b>. El sistema detectara automaticamente:
+                </p>
+                <ul class="import-info" style="margin:8px 0 16px 20px;font-size:0.85rem;line-height:1.6;">
+                    <li>👤 <b>META</b> → crea/actualiza personas con datos biograficos</li>
+                    <li>👨‍👩‍👧‍👦 <b>FAMILIA</b> → crea personas + vinculos familiares (padres, hijos, conyuge, hermanos)</li>
+                    <li>🏢 <b>EMPRESAS</b> → crea empresas + vinculos persona→empresa</li>
+                    <li>📄 <b>SUNAT</b> → datos de RUC y empresa</li>
+                    <li>💰 <b>SUELDOS</b> → historial laboral como notas</li>
+                    <li>📞 <b>TELEFONOS / CORREOS / VEHICULOS</b> → datos de contacto como notas</li>
+                </ul>
+                <div class="form-group">
+                    <label for="li-textarea">Texto exportado de Telegram</label>
+                    <textarea id="li-textarea" class="import-textarea" rows="20" placeholder="Pegue aqui el contenido de los archivos HTML exportados de Telegram..."></textarea>
+                </div>
+                <div id="li-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" data-close="modal-importar-leder">Cerrar</button>
+                    <button type="submit" class="btn btn-primary">Importar LEDER</button>
                 </div>
             </form>
         </div>

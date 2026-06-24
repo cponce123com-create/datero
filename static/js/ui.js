@@ -718,6 +718,47 @@ document.getElementById("form-importar-empresas").addEventListener("submit", asy
     btn.disabled = false; btn.textContent = "Importar Empresas";
 });
 
+/* ─── LEDER Telegram Import ─── */
+document.getElementById("btn-importar-leder").addEventListener("click", function() {
+    document.getElementById("form-importar-leder").reset();
+    document.getElementById("li-resultado").classList.add("hidden");
+    om("modal-importar-leder");
+});
+
+document.getElementById("form-importar-leder").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    var raw = document.getElementById("li-textarea").value.trim();
+    if (!raw) return;
+    var btn = document.querySelector("#form-importar-leder button[type=submit]");
+    btn.disabled = true; btn.textContent = "Importando...";
+    try {
+        var r = await af(A + "/importar/leder-telegram", { method: "POST", body: JSON.stringify({ texto: raw }) });
+        var div = document.getElementById("li-resultado");
+        div.classList.remove("hidden");
+        var hasError = r.errores && r.errores.length > 0;
+        div.style.background = hasError ? "#fef2f2" : "#f0fdf4";
+        div.style.border = hasError ? "1px solid #fca5a5" : "1px solid #bbf7d0";
+        var html = "<strong>" + r.mensaje + "</strong>";
+        html += '<div style="margin-top:8px;font-size:0.85rem;display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
+        html += '<span>👤 Personas: ' + (r.personas || 0) + '</span>';
+        html += '<span>👨‍👩‍👧‍👦 Relaciones: ' + (r.relaciones || 0) + '</span>';
+        html += '<span>🏢 Empresas: ' + (r.empresas || 0) + '</span>';
+        html += '<span>🔗 Vínculos: ' + (r.vinculos || 0) + '</span>';
+        html += '</div>';
+        if (r.errores && r.errores.length > 0) {
+            html += '<div style="margin-top:8px;font-size:0.8rem;color:#dc2626;max-height:100px;overflow-y:auto;">';
+            r.errores.slice(0, 5).forEach(function(err) {
+                html += '<div>⚠ ' + es(err) + '</div>';
+            });
+            if (r.errores.length > 5) html += '<div>... y ' + (r.errores.length - 5) + ' más</div>';
+            html += '</div>';
+        }
+        div.innerHTML = html;
+        st(r.mensaje, hasError ? "error" : "success");
+    } catch (err) { st(err.message, "error"); }
+    btn.disabled = false; btn.textContent = "Importar LEDER";
+});
+
 /* ─── Dashboard ─── */
 document.getElementById("btn-dashboard").addEventListener("click", function() { cargarDashboard(); });
 async function cargarDashboard() {

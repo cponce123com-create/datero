@@ -67,6 +67,10 @@ from services.persona_service import (
     eliminar_persona_con_auditoria,
     actualizar_persona_con_auditoria,
 )
+from services.leder_parser import (
+    procesar_texto_leder,
+    LederParseResult,
+)
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -620,6 +624,54 @@ def _ejecutar_enriquecimiento(user_id: int, user_username: str):
             db.close()
         except Exception:
             pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LEDER DATA TELEGRAM IMPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/importar/leder-telegram", status_code=status.HTTP_201_CREATED)
+def api_importar_leder_telegram(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Importa datos desde exportacion Telegram de LEDER DATA BOT.
+
+    El texto debe contener los mensajes del bot @LEDER_DATA_BOT con formato:
+    - META [PREMIUM] → crea/actualiza persona
+    - META | FAMILIA [1|2] [PREMIUM] → crea personas + relaciones familiares
+    - META | EMPRESAS [PREMIUM] → crea empresas + vinculos persona→empresa
+    - META | SUNAT [PREMIUM] → crea/actualiza empresa
+    - META | SUELDOS/TELEFONOS/CORREOS/VEHICULOS → agrega notas a persona
+    """
+    raw = body.get("texto", "")
+    if not raw.strip():
+        raise HTTPException(status_code=400, detail="No hay datos para importar")
+
+    result = procesar_texto_leder(db, raw)
+
+    partes = []
+    if result.personas_creadas:
+        partes.append(f"{result.personas_creadas} persona(s)")
+    if result.relaciones_creadas:
+        partes.append(f"{result.relaciones_creadas} relacion(es)")
+    if result.empresas_creadas:
+        partes.append(f"{result.empresas_creadas} empresa(s)")
+    if result.vinculos_creados:
+        partes.append(f"{result.vinculos_creados} vinculo(s)")
+
+    errores_str = f" ({len(result.errores)} error(es))" if result.errores else ""
+    mensaje = f"Importacion completada: {', '.join(partes) if partes else 'sin cambios'}{errores_str}"
+
+    return {
+        "mensaje": mensaje,
+        "personas": result.personas_creadas,
+        "relaciones": result.relaciones_creadas,
+        "empresas": result.empresas_creadas,
+        "vinculos": result.vinculos_creados,
+        "errores": result.errores,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
