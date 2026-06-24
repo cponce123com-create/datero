@@ -729,6 +729,14 @@ def procesar_texto_leder(db: Session, raw: str) -> LederResult:
 
         except Exception as e:
             res.err.append(f"Error en bloque {tipo}: {str(e)[:80]}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception as e:
+        res.err.append(f"Error al guardar: {str(e)[:100]}")
+        db.rollback()
     return res
