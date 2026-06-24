@@ -165,6 +165,11 @@ def step_add_empresa_columns():
             ("afiliado_ple", "VARCHAR(5)"),
             ("representante_legal_dni", "VARCHAR(20)"),
             ("representante_legal_nombre", "VARCHAR(300)"),
+            ("sistema_emision_electronica", "TEXT"),
+            ("emisor_electronico_desde", "VARCHAR(20)"),
+            ("comprobantes_electronicos", "TEXT"),
+            ("padrones", "TEXT"),
+            ("establecimientos", "TEXT"),
             ("actualizado_en", "TIMESTAMP WITH TIME ZONE DEFAULT NOW()"),
         ]
         for col_name, col_type in columnas:

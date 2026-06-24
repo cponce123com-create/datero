@@ -77,6 +77,22 @@ async def lifespan(app: FastAPI):
     db = next(get_db())
     try:
         seed_usuario_admin(db)
+        # Auto-migrate: agregar columnas nuevas si no existen
+        from sqlalchemy import text as sa_text
+        from database import engine as _eng
+        nuevas_cols = [
+            ("sistema_emision_electronica", "TEXT"),
+            ("emisor_electronico_desde", "VARCHAR(20)"),
+            ("comprobantes_electronicos", "TEXT"),
+            ("padrones", "TEXT"),
+            ("establecimientos", "TEXT"),
+        ]
+        with _eng.connect() as c:
+            for col, typ in nuevas_cols:
+                c.execute(sa_text(
+                    f"ALTER TABLE empresas ADD COLUMN IF NOT EXISTS {col} {typ}"
+                ))
+            c.commit()
     finally:
         db.close()
     yield
