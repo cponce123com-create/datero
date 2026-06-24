@@ -662,6 +662,11 @@ def api_importar_leder_telegram(
     if not raw.strip():
         raise HTTPException(status_code=400, detail="No hay datos para importar")
 
+    # Debug: contar cuantos [#LEDER_BOT] hay
+    import re as _re
+    msgs_raw = _re.split(r"(?=\[#LEDER_BOT\])", raw)
+    total_raw = len([m for m in msgs_raw if len(m.strip()) > 20])
+
     result = procesar_texto_leder(db, raw)
 
     partes = []
@@ -684,6 +689,11 @@ def api_importar_leder_telegram(
         "empresas": result.e,
         "vinculos": result.v,
         "errores": result.err[:5] if result.err else [],
+        "_debug": {
+            "mensajes_detectados": total_raw,
+            "mensajes_procesados": result.p + result.r + result.e + result.v,
+            "primeros_200_chars": raw[:200],
+        },
     }
 
 
