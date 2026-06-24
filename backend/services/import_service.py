@@ -289,7 +289,7 @@ def _importar_sunat_macro(db: Session, texto: str, etiqueta_id: Optional[int], e
     inicio = 1 if tiene_header else 0
 
     out = ImportOut(mensaje="")
-    commit_cada = 50
+    commit_cada = 5
     for i in range(inicio, len(lineas)):
         partes = lineas[i].split("\t")
         if len(partes) < 2:
