@@ -159,7 +159,7 @@ function _abrirModalFicha() {
         modal = document.createElement("div");
         modal.id = "modal-ficha";
         modal.className = "modal-overlay";
-        modal.innerHTML = '<div class="modal modal-ficha-container"><div class="modal-header"><h3 id="modal-ficha-title">👤 Persona</h3><button class="btn btn-ghost" onclick="document.getElementById(\'modal-ficha\').classList.add(\'hidden\')">✕</button></div><div id="modal-ficha-content"></div></div>';
+        modal.innerHTML = '<div class="modal-content" style="width:90%;max-width:720px;max-height:85vh;overflow-y:auto;border-radius:16px;"><div class="modal-header"><h3 id="modal-ficha-title">👤 Persona</h3><button class="btn btn-ghost" onclick="document.getElementById(\'modal-ficha\').classList.add(\'hidden\')">✕</button></div><div id="modal-ficha-content"></div></div>';
         document.body.appendChild(modal);
         modal.addEventListener("click", function(e) { if (e.target === modal) modal.classList.add("hidden"); });
     }
