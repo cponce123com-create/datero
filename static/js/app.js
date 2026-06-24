@@ -24,21 +24,8 @@ function toggleDarkMode() {
     if (btn) btn.textContent = saved === "dark" ? "☀️" : "🌙";
 })();
 
-/* ─── Stats (Home) ─── */
-async function cargarStats() {
-    try {
-        var stats = await Promise.all([
-            af(A + "/personas?limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return 0; }),
-            af(A + "/empresas?q=a&limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return 0; }),
-            af(A + "/relaciones/0").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return 0; }),
-            af(A + "/etiquetas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return 0; }),
-        ]);
-        ["Personas","Empresas","Relaciones","Etiquetas"].forEach(function(k,i){
-            var el = document.getElementById("total" + k);
-            if (el) el.textContent = stats[i] || 0;
-        });
-    } catch(e) { /* KPI already handled by cargarKPIs */ }
-}
+/* ─── Stats (obsoleto, usar cargarKPIs) ─── */
+async function cargarStats() {}
 
 /* ─── Login via API JSON ─── */
 
@@ -229,7 +216,7 @@ async function _init() {
     try {
         await af(A + "/health");
         console.log("RedCorruptela API v0.3 - sesion activa");
-        cargarStats();
+        cargarKPIs();
         setTimeout(drawGraph, 500);
     } catch (err) {
         console.warn("API no disponible:", err.message);
@@ -319,15 +306,23 @@ window.sl = function() {
     if (w) w.style.display = "none";
 };
 
-/* ─── KPI Loader (uses individual endpoints, avoids /api/stats 500) ─── */
+/* ─── KPI Loader ─── */
 async function cargarKPIs() {
     try {
-        var [p, e, r, et] = await Promise.all([
-            af(A + "/personas?limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return "—"; }),
-            af(A + "/empresas?q=a&limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return "—"; }),
-            af(A + "/relaciones/0").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
+        var [p, e, et] = await Promise.all([
+            af(A + "/personas?q=a&limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return "—"; }),
+            af(A + "/db/todas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
             af(A + "/etiquetas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
         ]);
+        // Relaciones usa /api/stats silenciosamente
+        var r = "—";
+        try {
+            var token = getAuth();
+            if (token) {
+                var resp = await fetch("/api/stats", { headers: { Authorization: "Bearer " + token } });
+                if (resp.ok) { var d = await resp.json(); r = d.total_relaciones || "—"; }
+            }
+        } catch(e) {}
         var el1 = document.getElementById("kpi-personas"); if (el1) el1.textContent = p;
         var el2 = document.getElementById("kpi-empresas"); if (el2) el2.textContent = e;
         var el3 = document.getElementById("kpi-relaciones"); if (el3) el3.textContent = r;
