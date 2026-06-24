@@ -1128,3 +1128,20 @@ body {
     padding: 2px 12px; border-radius: 50px;
     color: var(--color-text-secondary);
 }
+
+/* ─── Modal Ficha ───────────────────────────────────────────────────── */
+.modal-ficha-container {
+    width: 90%;
+    max-width: 700px;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+.modal-ficha-container .ficha-header {
+    padding: 20px 24px;
+}
+.modal-ficha-container .ficha-body {
+    padding: 0 24px 20px;
+}
+.modal-ficha-container .section {
+    margin-top: 16px;
+}

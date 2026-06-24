@@ -152,15 +152,65 @@ async function dsEmpresa() {
     } catch (err) { st(err.message, "error"); }
 }
 
-/* ─── Ficha Persona ─── */
+/* ─── Ficha Persona (Modal) ─── */
+function _abrirModalFicha() {
+    var modal = document.getElementById("modal-ficha");
+    if (!modal) {
+        modal = document.createElement("div");
+        modal.id = "modal-ficha";
+        modal.className = "modal-overlay";
+        modal.innerHTML = '<div class="modal modal-ficha-container"><div class="modal-header"><h3 id="modal-ficha-title">👤 Persona</h3><button class="btn btn-ghost" onclick="document.getElementById(\'modal-ficha\').classList.add(\'hidden\')">✕</button></div><div id="modal-ficha-content"></div></div>';
+        document.body.appendChild(modal);
+        modal.addEventListener("click", function(e) { if (e.target === modal) modal.classList.add("hidden"); });
+    }
+    modal.classList.remove("hidden");
+    return document.getElementById("modal-ficha-content");
+}
+
 async function cf(dni) {
-    var fd = document.getElementById("persona-ficha");
-    var ef = document.getElementById("empresa-ficha");
-    var es_ = document.getElementById("empty-state");
-    fd.innerHTML = '<div class="loading-text"><span class="spinner"></span> Cargando...</div>';
-    fd.classList.remove("hidden"); ef.classList.add("hidden"); es_.classList.add("hidden");
-    try { var d = await af(A + "/personas/" + dni); rf(d); window.scrollTo({ top: 0, behavior: "smooth" }); }
-    catch (err) { fd.innerHTML = '<div class="no-results">Error: ' + es(err.message) + '</div>'; }
+    var content = _abrirModalFicha();
+    document.getElementById("modal-ficha-title").textContent = "👤 Persona";
+    content.innerHTML = '<div class="loading-text" style="padding:40px;text-align:center;"><span class="spinner"></span> Cargando...</div>';
+    try {
+        var d = await af(A + "/personas/" + dni);
+        // Guardar referencia para rf()
+        window._fichaData = d;
+        rf(d);
+        // Mover el HTML generado por rf() al modal
+        var fd = document.getElementById("persona-ficha");
+        if (fd && fd.innerHTML) {
+            content.innerHTML = fd.innerHTML;
+            // Re-aplicar eventos
+            _aplicarEventosFicha(content, d);
+        }
+    } catch (err) {
+        content.innerHTML = '<div class="no-results" style="padding:40px;text-align:center;">Error: ' + es(err.message) + '</div>';
+    }
+}
+
+function _aplicarEventosFicha(container, d) {
+    if (!d) d = window._fichaData;
+    if (!d) return;
+    var p = d.persona;
+    container.querySelectorAll(".relacion-nombre:not(.empresa-link), .parentesco-nombre").forEach(function(el) {
+        el.addEventListener("click", function() { cf(el.dataset.dni); });
+    });
+    container.querySelectorAll(".empresa-link").forEach(function(el) {
+        el.addEventListener("click", function() { cfEmpresa(el.dataset.ruc); });
+    });
+    container.querySelectorAll(".relacion-delete:not(.btn-desvincular-empresa)").forEach(function(btn) {
+        btn.addEventListener("click", async function(e) { e.stopPropagation(); if (!confirm("Eliminar relacion?")) return; try { await af(A + "/relaciones/" + btn.dataset.id, { method: "DELETE" }); st("Relacion eliminada", "success"); cf(p.dni); } catch (err) { st(err.message, "error"); } });
+    });
+    container.querySelectorAll(".btn-desvincular-empresa").forEach(function(btn) {
+        btn.addEventListener("click", async function(e) { e.stopPropagation(); if (!confirm("Desvincular?")) return; try { await af(A + "/persona-empresa/" + btn.dataset.id, { method: "DELETE" }); st("Desvinculado", "success"); cf(p.dni); } catch (err) { st(err.message, "error"); } });
+    });
+    container.querySelectorAll(".tag-remove").forEach(function(btn) {
+        btn.addEventListener("click", async function(e) { e.stopPropagation(); try { await af(A + "/personas/" + p.dni + "/etiquetas/" + encodeURIComponent(btn.dataset.etiqueta), { method: "DELETE" }); st("Etiqueta removida", "success"); cf(p.dni); } catch (err) { st(err.message, "error"); } });
+    });
+    var ta_ = container.querySelector(".tag-add-btn");
+    if (ta_) ta_.addEventListener("click", function() { abrirEtiqueta(p.dni); });
+    var db_ = container.querySelector(".btn-delete-persona");
+    if (db_) db_.addEventListener("click", async function() { if (!confirm("Eliminar a " + p.nombre_completo + "?")) return; try { await af(A + "/personas/" + p.dni, { method: "DELETE" }); st("Persona eliminada", "success"); document.getElementById("modal-ficha").classList.add("hidden"); } catch (err) { st(err.message, "error"); } });
 }
 
 function rf(d) {
@@ -213,17 +263,44 @@ function rf(d) {
     var db_ = fd.querySelector(".btn-delete-persona"); if (db_) db_.addEventListener("click", async function() { if (!confirm("Eliminar a " + p.nombre_completo + "?")) return; try { await af(A + "/personas/" + p.dni, { method: "DELETE" }); st("Persona eliminada", "success"); fd.classList.add("hidden"); document.getElementById("empty-state").classList.remove("hidden"); } catch (err) { st(err.message, "error"); } });
 }
 
-/* ─── Ficha Empresa ─── */
+/* ─── Ficha Empresa (Modal) ─── */
 async function cfEmpresa(ruc) {
-    var ef = document.getElementById("empresa-ficha");
-    var fd = document.getElementById("persona-ficha");
-    var es_ = document.getElementById("empty-state");
-    ef.innerHTML = '<div class="loading-text"><span class="spinner"></span> Cargando empresa...</div>';
-    ef.classList.remove("hidden"); fd.classList.add("hidden"); es_.classList.add("hidden");
-    try { var d = await af(A + "/empresas/" + ruc); rfEmpresa(d); window.scrollTo({ top: 0, behavior: "smooth" }); }
-    catch (err) { ef.innerHTML = '<div class="no-results">Error: ' + es(err.message) + '</div>'; }
+    var content = _abrirModalFicha();
+    document.getElementById("modal-ficha-title").textContent = "🏢 Empresa";
+    content.innerHTML = '<div class="loading-text" style="padding:40px;text-align:center;"><span class="spinner"></span> Cargando empresa...</div>';
+    try {
+        var d = await af(A + "/empresas/" + ruc);
+        window._fichaData = d;
+        rfEmpresa(d);
+        var ef = document.getElementById("empresa-ficha");
+        if (ef && ef.innerHTML) {
+            content.innerHTML = ef.innerHTML;
+            _aplicarEventosEmpresa(content, d, ruc);
+        }
+    } catch (err) {
+        content.innerHTML = '<div class="no-results" style="padding:40px;text-align:center;">Error: ' + es(err.message) + '</div>';
+    }
 }
 window.cfEmpresa = cfEmpresa;
+
+function _aplicarEventosEmpresa(container, d, ruc) {
+    if (!d) d = window._fichaData;
+    if (!d) return;
+    var e = d.empresa || {};
+    container.querySelectorAll(".relacion-nombre:not(.empresa-link)").forEach(function(el) {
+        el.addEventListener("click", function() { cf(el.dataset.dni); });
+    });
+    container.querySelectorAll(".btn-desvincular-persona").forEach(function(btn) {
+        btn.addEventListener("click", async function(ev) { ev.stopPropagation(); if (!confirm("Desvincular?")) return; try { await af(A + "/persona-empresa/" + btn.dataset.id, { method: "DELETE" }); st("Desvinculado", "success"); cfEmpresa(ruc); } catch (err) { st(err.message, "error"); } });
+    });
+    container.querySelectorAll(".tag-remove-empresa").forEach(function(btn) {
+        btn.addEventListener("click", async function(ev) { ev.stopPropagation(); try { await af(A + "/empresas/" + ruc + "/etiquetas/" + encodeURIComponent(btn.dataset.etiqueta), { method: "DELETE" }); st("Etiqueta removida", "success"); cfEmpresa(ruc); } catch (err) { st(err.message, "error"); } });
+    });
+    var ta2 = container.querySelector(".tag-add-btn");
+    if (ta2) ta2.addEventListener("click", function() { abrirEtiquetaEmpresa(ruc); });
+    var db2 = container.querySelector(".btn-delete-empresa");
+    if (db2) db2.addEventListener("click", async function() { if (!confirm("Eliminar empresa?")) return; try { await af(A + "/empresas/" + ruc, { method: "DELETE" }); st("Empresa eliminada", "success"); document.getElementById("modal-ficha").classList.add("hidden"); } catch (err) { st(err.message, "error"); } });
+}
 
 function rfEmpresa(d) {
     var e = d.empresa, ef = document.getElementById("empresa-ficha");
