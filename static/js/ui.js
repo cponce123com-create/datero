@@ -729,6 +729,19 @@ window.lederDebug = async function() {
         div.style.background = "#f8fafc";
         div.style.border = "1px solid #94a3b8";
         var html = "<strong>🔍 Debug - " + r.total_partes + " partes, " + r.partes_procesables + " procesables</strong>";
+        if (r.conteo_tipos) {
+            html += '<div style="margin-top:8px;font-size:0.85rem;display:flex;flex-wrap:wrap;gap:6px;">';
+            Object.keys(r.conteo_tipos).forEach(function(t) {
+                html += '<span style="background:#e2e8f0;padding:2px 8px;border-radius:4px;">' + t + ': ' + r.conteo_tipos[t] + '</span>';
+            });
+            html += '</div>';
+        }
+        if (r.metas_no_detectadas !== undefined && r.metas_no_detectadas > 0) {
+            html += '<div style="margin-top:6px;color:#dc2626;font-weight:500;">⚠ ' + r.metas_no_detectadas + ' posibles META no detectados</div>';
+            if (r.ejemplo_meta_perdida) {
+                html += '<pre style="font-size:0.75rem;max-height:100px;overflow:auto;margin-top:4px;padding:8px;background:#1e293b;color:#fbbf24;border-radius:6px;">' + es(r.ejemplo_meta_perdida) + '</pre>';
+            }
+        }
         html += '<pre style="font-size:0.75rem;max-height:200px;overflow:auto;margin-top:8px;padding:8px;background:#1e293b;color:#e2e8f0;border-radius:6px;">' + es(r.primeros_300_chars) + '</pre>';
         if (r.partes && r.partes.length > 0) {
             html += '<div style="margin-top:8px;font-size:0.8rem;">';
