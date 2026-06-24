@@ -289,12 +289,15 @@ document.addEventListener("DOMContentLoaded", function(){
                 setTimeout(function(){
                     var si = document.getElementById("search-input");
                     if (si) si.focus();
+                    // Auto-list all personas
+                    listarTodasPersonas();
                 }, 300);
             }
             if (view === "empresas") {
                 setTimeout(function(){
                     var esi = document.getElementById("search-empresa-input");
                     if (esi) esi.focus();
+                    listarTodasEmpresas();
                 }, 300);
             }
         });
@@ -314,6 +317,48 @@ document.addEventListener("DOMContentLoaded", function(){
         });
     }
 });
+
+/* ─── Auto-list all Personas ─── */
+async function listarTodasPersonas() {
+    try {
+        var sr = document.getElementById("search-results");
+        if (!sr) return;
+        var d = await af(A + "/db/todas");
+        if (!d || !d.length) {
+            sr.innerHTML = '<div class="no-results" style="padding:20px;text-align:center;color:var(--muted);">No hay personas registradas. Usa Importar o el boton +Nuevo.</div>';
+            sr.classList.remove("hidden");
+            return;
+        }
+        sr.innerHTML = d.map(function(p){
+            return '<div class="search-result-item" data-dni="' + p.dni + '"><span><strong>' + es(p.nombre_completo) + '</strong></span><span class="search-result-dni">DNI: ' + es(p.dni) + '</span></div>';
+        }).join("");
+        sr.querySelectorAll(".search-result-item").forEach(function(it){
+            it.addEventListener("click", function(){ sr.classList.add("hidden"); cf(it.dataset.dni); });
+        });
+        sr.classList.remove("hidden");
+    } catch(e) { console.warn("listarPersonas error:", e); }
+}
+
+/* ─── Auto-list all Empresas ─── */
+async function listarTodasEmpresas() {
+    try {
+        var esr = document.getElementById("search-empresa-results");
+        if (!esr) return;
+        var d = await af(A + "/empresas/todas");
+        if (!d || !d.length) {
+            esr.innerHTML = '<div class="no-results" style="padding:20px;text-align:center;color:var(--muted);">No hay empresas registradas. Usa Importar o el boton +Nuevo.</div>';
+            esr.classList.remove("hidden");
+            return;
+        }
+        esr.innerHTML = d.map(function(e){
+            return '<div class="search-result-item" data-ruc="' + e.ruc + '"><span><strong>' + es(e.nombre) + '</strong></span><span class="search-result-dni">RUC: ' + es(e.ruc) + '</span></div>';
+        }).join("");
+        esr.querySelectorAll(".search-result-item").forEach(function(it){
+            it.addEventListener("click", function(){ esr.classList.add("hidden"); cfEmpresa(it.dataset.ruc); });
+        });
+        esr.classList.remove("hidden");
+    } catch(e) { console.warn("listarEmpresas error:", e); }
+}
 
 /* ─── KPI Loader ─── */
 async function cargarKPIs() {
