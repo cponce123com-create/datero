@@ -199,9 +199,18 @@ class LederResult:
 
 # ─── Procesador principal ─────────────────────────────────────────────────
 
+
+def _strip_html(t):
+    import re
+    t = re.sub(r'<[^>]+>', '', t)
+    t = t.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+    t = t.replace('&nbsp;', ' ').replace('&#10;', '\n').replace('&#13;', '')
+    t = t.replace("&#39;", "'").replace('&quot;', "'")
+    t = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), t)
+    return t
 def procesar_texto_leder(db, raw):
     res = LederResult()
-    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
+    raw = _strip_html(raw)
     for msg in re.split(r"(?=\[#LEDER_BOT\])", raw):
         msg = msg.strip()
         if len(msg) < 20: continue
