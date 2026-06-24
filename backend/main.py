@@ -670,11 +670,21 @@ def api_leder_debug(
             "bloques_personas": blqs,
             "preview": p[:120],
         })
+    # Conteo por tipo
+    from collections import Counter
+    tipos_count = Counter(p["tipo"] for p in info)
+
+    # Buscar partes que parezcan META pero no se detectaron (tienen "META" pero no "|")
+    metas_perdidas = [p for p in info if "META" in (p.get("preview") or "") and "|" not in (p.get("preview") or "")[:60]]
+
     return {
         "total_partes": len(partes),
         "partes_procesables": len(info),
+        "conteo_tipos": dict(tipos_count.most_common()),
+        "metas_no_detectadas": len(metas_perdidas),
+        "ejemplo_meta_perdida": metas_perdidas[0]["preview"][:200] if metas_perdidas else None,
         "primeros_300_chars": limpio[:300],
-        "partes": info[:20],
+        "partes": info[:25],
     }
 
 
