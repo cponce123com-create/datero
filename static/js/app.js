@@ -68,51 +68,118 @@ var networkInstance = null;
 
 async function drawGraph() {
     try {
-        var p = await af(A + "/stats").catch(function(){ return null; });
-        var personasRes = await fetch(A + "/personas?q=a&limite=1").catch(function(){ return null; });
-        if (!personasRes) {
-            document.getElementById("network-graph").innerHTML = '<p style="text-align:center;padding:40px;color:var(--color-text-secondary);">Agrega personas y relaciones para ver el grafo</p>';
-            return;
-        }
-        var [personas, relaciones] = await Promise.all([
-            af(A + "/db/todas").catch(function(){ return []; }),
-            fetch(A + "/relaciones/" + (document.getElementById("search-input") ? "0" : "0")).catch(function(){ return []; })
-        ]);
-        // Si no tenemos relaciones, mostrar placeholder
+        var personas;
+        try {
+            personas = await af(A + "/db/todas");
+        } catch(e) { personas = []; }
         if (!personas || !personas.length) {
-            document.getElementById("network-graph").innerHTML = '<p style="text-align:center;padding:40px;color:var(--color-text-secondary);">Aun no hay datos para el grafo</p>';
+            document.getElementById("network-graph").innerHTML = '<p style="text-align:center;padding:40px;color:var(--color-text-secondary);">Agrega personas para ver el grafo. <button class="btn btn-primary btn-sm" onclick="showFamilyTree()" style="margin-left:8px;">Probar arbol familiar</button></p>';
             return;
         }
-        var limited = personas.slice(0, 50);
-        var nodes = limited.map(function(p){ return {
-            id: p.id, label: (p.nombres + " " + (p.apellido_paterno || "")).trim(),
-            shape: "dot", size: 20,
-            color: "#2563eb",
-            font: { color: "var(--color-text)" }
-        }; });
-        var edges = [];
-        if (typeof relaciones === "object" && relaciones.length) {
-            var ids = limited.map(function(p){ return p.id; });
-            edges = relaciones.filter(function(r){ return ids.indexOf(r.persona_origen_id) >= 0 && ids.indexOf(r.persona_destino_id) >= 0; })
-                .map(function(r){ return {
-                    from: r.persona_origen_id, to: r.persona_destino_id,
-                    label: r.tipo_relacion || "relacion",
-                    arrows: "to", color: { color: "var(--color-border)" }
-                }; });
-        }
-        var container = document.getElementById("network-graph");
-        if (typeof vis !== "undefined") {
-            var data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
-            var options = {
-                physics: { stabilization: true, barnesHut: { gravitationalConstant: -2000 } },
-                interaction: { hover: true, dragNodes: true },
-                edges: { smooth: true, font: { size: 10 } }
-            };
-            if (networkInstance) networkInstance.destroy();
-            networkInstance = new vis.Network(container, data, options);
-        }
+        // version friendly: mostrar boton para arbol familiar
+        document.getElementById("network-graph").innerHTML = '<p style="text-align:center;padding:20px;color:var(--color-text-secondary);">Selecciona una persona y haz clic en "Arbol familiar" en su ficha.</p>';
     } catch(err) { console.warn("Graph error:", err); }
 }
+
+/* ─── Family Chart (integrador) ─── */
+var fcInstance = null;
+
+function convertToFamilyChart(persona, relaciones) {
+    // Convierte datos de la API al formato family-chart Datum[]
+    var nodes = {};
+    var data = [];
+
+    // Persona principal
+    if (!nodes[persona.dni]) {
+        nodes[persona.dni] = {
+            id: persona.dni,
+            data: { gender: (persona.genero || "DESCONOCIDO") === "MASCULINO" ? "M" : "F" },
+            rels: { parents: [], spouses: [], children: [] },
+            info: persona.nombres + " " + (persona.apellido_paterno || "")
+        };
+    }
+
+    // Procesar relaciones
+    for (var i = 0; i < relaciones.length; i++) {
+        var r = relaciones[i];
+        var p = r.persona_relacionada || {};
+        if (!p.dni) continue;
+
+        if (!nodes[p.dni]) {
+            nodes[p.dni] = {
+                id: p.dni,
+                data: { gender: (p.genero || "DESCONOCIDO") === "MASCULINO" ? "M" : "F" },
+                rels: { parents: [], spouses: [], children: [] },
+                info: p.nombres + " " + (p.apellido_paterno || "")
+            };
+        }
+
+        var tipo = r.tipo_relacion || "";
+        if (tipo === "padre" || tipo === "madre") {
+            nodes[persona.dni].rels.parents.push(p.dni);
+            nodes[p.dni].rels.children.push(persona.dni);
+        } else if (tipo === "conyuge") {
+            nodes[persona.dni].rels.spouses.push(p.dni);
+            nodes[p.dni].rels.spouses.push(persona.dni);
+        } else if (tipo === "hijo" || tipo === "hija") {
+            nodes[persona.dni].rels.children.push(p.dni);
+            nodes[p.dni].rels.parents.push(persona.dni);
+        }
+    }
+
+    for (var k in nodes) data.push(nodes[k]);
+    return data;
+}
+
+async function showFamilyTree(dni) {
+    if (!dni) {
+        dni = prompt("Ingrese DNI de la persona para ver su arbol familiar:");
+        if (!dni || dni.length !== 8) { st("DNI invalido", "error"); return; }
+    }
+    try {
+        var persona = await af(A + "/personas/" + dni);
+        var relaciones = persona.relaciones || [];
+        var data = convertToFamilyChart(persona.persona, relaciones);
+
+        if (data.length < 2) {
+            st("Esta persona no tiene familiares registrados", "info");
+            return;
+        }
+
+        // Mostrar modal con el arbol
+        var modal = document.getElementById("modal-family-chart");
+        if (!modal) {
+            modal = document.createElement("div");
+            modal.id = "modal-family-chart";
+            modal.className = "modal-overlay";
+            modal.innerHTML = '<div class="modal" style="width:90%;max-width:1000px;height:80vh;"><div class="modal-header"><h3>🌳 Arbol familiar</h3><button class="btn btn-ghost" onclick="this.closest(\'.modal-overlay\').classList.add(\'hidden\')">✕</button></div><div id="family-chart-container" style="width:100%;height:calc(100% - 50px);"></div></div>';
+            document.body.appendChild(modal);
+            modal.addEventListener("click", function(e) {
+                if (e.target === modal) modal.classList.add("hidden");
+            });
+        }
+        modal.classList.remove("hidden");
+
+        var container = document.getElementById("family-chart-container");
+        container.innerHTML = "";
+
+        if (fcInstance) fcInstance.destroy();
+        fcInstance = family_chart.default.createChart(container, data, {
+            template: "pattern1",
+            width: "100%",
+            height: "100%"
+        });
+        fcInstance.render();
+
+        st("Arbol cargado: " + data.length + " personas", "success");
+    } catch(err) {
+        console.error("Family chart error:", err);
+        st("Error al cargar arbol: " + err.message, "error");
+    }
+}
+
+// Exponer globalmente
+window.showFamilyTree = showFamilyTree;
 
 /* ─── Busqueda Predictiva ─── */
 var _searchTimer = null;
