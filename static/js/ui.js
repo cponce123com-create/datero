@@ -323,9 +323,16 @@ window.cargarArbol = async function(dni) {
     } catch (err) { ct_.textContent = "Error: " + err.message; }
 };
 
-function fan(no, px, ia) {
-    var l = px + (px ? "├─ " : "") + r + no.persona.nombre_completo + "\n";
-    if (no.hijos && no.hijos.length > 0) { no.hijos.forEach(function(ch, i) { var il = i === no.hijos.length - 1; var np = px + (il ? "   " : "│  "); l += fan(ch, np, ia); }); }
+function fan(no, px, il) {
+    var conn = il ? "└─ " : "├─ ";
+    var l = px + (px ? conn : "") + no.persona.nombre_completo + "\n";
+    if (no.hijos && no.hijos.length > 0) {
+        no.hijos.forEach(function(ch, i) {
+            var last = i === no.hijos.length - 1;
+            var np = px + (px ? (il ? "   " : "│  ") : "");
+            l += fan(ch, np, last);
+        });
+    }
     return l;
 }
 
@@ -440,13 +447,13 @@ document.getElementById("form-vincular-empresa").addEventListener("submit", asyn
 });
 
 /* ─── Etiqueta Persona ─── */
-function abrirEtiqueta(dni) { document.getElementById("e-dni").value = dni; document.getElementById("e-nombre").value = ""; document.getElementById("e-obs").value = ""; om("modal-etiqueta"); }
+function abrirEtiqueta(dni) { document.getElementById("e-dni").value = dni; document.getElementById("etq-nombre").value = ""; document.getElementById("e-obs").value = ""; om("modal-etiqueta"); }
 window.abrirEtiqueta = abrirEtiqueta;
 
 document.getElementById("form-etiqueta").addEventListener("submit", async function(e) {
     e.preventDefault();
     var dni = document.getElementById("e-dni").value;
-    var b = { etiqueta_nombre: document.getElementById("e-nombre").value.trim(), observacion: document.getElementById("e-obs").value.trim() || null };
+    var b = { etiqueta_nombre: document.getElementById("etq-nombre").value.trim(), observacion: document.getElementById("e-obs").value.trim() || null };
     try { await af(A + "/personas/" + dni + "/etiquetas", { method: "POST", body: JSON.stringify(b) }); st("Etiqueta asignada", "success"); cm("modal-etiqueta"); document.getElementById("form-etiqueta").reset(); cf(dni); }
     catch (err) { st(err.message, "error"); }
 });
