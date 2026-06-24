@@ -300,12 +300,12 @@ document.addEventListener("DOMContentLoaded", function(){
     }
 });
 
-/* ─── New Layout Navigation ─── */
+/* ─── KPI Loader ─── */
 async function cargarKPIs() {
     try {
         var [p, e, et] = await Promise.all([
-            af(A + "/personas?q=a&limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return "—"; }),
             af(A + "/db/todas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
+            af(A + "/empresas/todas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
             af(A + "/etiquetas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
         ]);
         var el1 = document.getElementById("kpi-personas"); if (el1) el1.textContent = p;
