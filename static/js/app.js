@@ -27,16 +27,17 @@ function toggleDarkMode() {
 /* ─── Stats (Home) ─── */
 async function cargarStats() {
     try {
-        var [p, e, r, t] = await Promise.all([
-            af(A + "/stats").catch(function(){ return {total_personas:0,total_empresas:0,total_relaciones:0,total_etiquetas:0}; }),
-            af(A + "/stats").catch(function(){ return {total_personas:0,total_empresas:0,total_relaciones:0,total_etiquetas:0}; }),
+        var stats = await Promise.all([
+            af(A + "/personas?limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return 0; }),
+            af(A + "/empresas?q=a&limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return 0; }),
+            af(A + "/relaciones/0").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return 0; }),
+            af(A + "/etiquetas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return 0; }),
         ]);
-        var stats = p;
-        ["Personas","Empresas","Relaciones","Etiquetas"].forEach(function(k){
+        ["Personas","Empresas","Relaciones","Etiquetas"].forEach(function(k,i){
             var el = document.getElementById("total" + k);
-            if (el) el.textContent = stats["total_" + k.toLowerCase()] || 0;
+            if (el) el.textContent = stats[i] || 0;
         });
-    } catch(err) { /* stats no available, show — */ }
+    } catch(e) { /* KPI already handled by cargarKPIs */ }
 }
 
 /* ─── Login via API JSON ─── */
