@@ -98,15 +98,18 @@ async def lifespan(app: FastAPI):
             # (VARCHAR(50) original no alcanza para direcciones largas, etc.)
             cambios_columna = [
                 ("direccion", "TEXT"),
+                ("estado", "TEXT"),
+                ("condicion", "TEXT"),
                 ("nombre_comercial", "TEXT"),
-                ("tipo_contribuyente", "VARCHAR(300)"),
+                ("tipo_contribuyente", "TEXT"),
                 ("actividad_economica", "TEXT"),
                 ("comprobantes_autorizados", "TEXT"),
                 ("sistema_emision", "TEXT"),
                 ("sistema_contabilidad", "TEXT"),
-                ("actividad_comercio_exterior", "VARCHAR(100)"),
+                ("actividad_comercio_exterior", "TEXT"),
                 ("afiliado_ple", "VARCHAR(50)"),
                 ("representante_legal_nombre", "VARCHAR(300)"),
+                ("representante_legal_dni", "VARCHAR(20)"),
             ]
             for col, new_type in cambios_columna:
                 c.execute(sa_text(
