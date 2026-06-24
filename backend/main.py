@@ -75,46 +75,30 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan: migraciones, pg_trgm, admin por defecto.
-    Todo error es no-fatal y se loggea.
+    Lifespan simplificado: solo activa pg_trgm y crea admin.
+    Las migraciones se gestionan manualmente via Neon SQL editor
+    o ejecutando 'alembic upgrade head' localmente si se desea.
     """
+    # 1. Extension pg_trgm para busqueda textual
     try:
-        # 1. Migraciones Alembic
-        try:
-            from alembic.config import Config as AlembicConfig
-            from alembic import command
-            alembic_cfg = AlembicConfig("alembic.ini")
-            command.ensure_version(alembic_cfg)
-            command.stamp(alembic_cfg, "head")
-            command.upgrade(alembic_cfg, "head")
-        except Exception as e:
-            print(f"[lifespan] Alembic: {e}")
-
-        # 2. pg_trgm
-        try:
-            from sqlalchemy import text as sa_text
-            from database import engine as _eng
-            with _eng.connect() as c:
-                c.execute(sa_text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-                c.commit()
-        except Exception as e:
-            print(f"[lifespan] pg_trgm: {e}")
-
-        # 3. Admin
-        try:
-            from database import SessionLocal
-            db = SessionLocal()
-            try:
-                seed_usuario_admin(db)
-            finally:
-                db.close()
-        except Exception as e:
-            print(f"[lifespan] seed_admin: {e}")
-
+        from sqlalchemy import text as sa_text
+        from database import engine as _eng
+        with _eng.connect() as c:
+            c.execute(sa_text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            c.commit()
     except Exception as e:
-        print(f"[lifespan] Error: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"[lifespan] pg_trgm: {e}")
+
+    # 2. Usuario admin por defecto
+    try:
+        from database import SessionLocal
+        db = SessionLocal()
+        try:
+            seed_usuario_admin(db)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[lifespan] seed_admin: {e}")
 
     yield
 
