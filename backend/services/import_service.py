@@ -207,7 +207,7 @@ def _importar_csv(db: Session, personas: List[PersonaCreate]) -> ImportOut:
             creados += 1
         except Exception as e:
             errores.append(f"DNI {datos.dni}: {str(e)[:100]}")
-    db.commit()
+    db.flush()
     return ImportOut(
         mensaje=f"Importacion completada: {creados} creados, {len(errores)} errores",
         total_procesadas=len(personas), personas_creadas=creados, errores=errores,
@@ -367,7 +367,7 @@ def _importar_sunat_macro(db: Session, texto: str, etiqueta_id: Optional[int], e
         except Exception as e:
             out.errores.append(f"RUC {ruc}: {str(e)[:100]}")
 
-    db.commit()
+    db.flush()
 
     partes_msg = []
     if out.empresas_creadas: partes_msg.append(f"{out.empresas_creadas} empresa(s) creada(s)")
