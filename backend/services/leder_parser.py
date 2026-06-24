@@ -77,10 +77,8 @@ class LederResult:
 def _strip_html(texto: str) -> str:
     """Convierte HTML a texto plano."""
     t = texto
-    t = re.sub(r'<br\s*/?>', '
-', t, flags=re.IGNORECASE)
-    t = re.sub(r'</(?:p|div|tr|li|h[1-6]|blockquote|pre)>', '
-', t, flags=re.IGNORECASE)
+    t = re.sub(r'<br\s*/?>', '\n', t, flags=re.IGNORECASE)
+    t = re.sub(r'</(?:p|div|tr|li|h[1-6]|blockquote|pre)>', '\n', t, flags=re.IGNORECASE)
     t = re.sub(r'<[^>]+>', '', t)
     for entity, char in [
         ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&nbsp;", " "),
@@ -89,10 +87,7 @@ def _strip_html(texto: str) -> str:
     ]:
         t = t.replace(entity, char)
     t = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), t)
-    t = re.sub(r'
-{3,}', '
-
-', t)
+    t = re.sub(r'\n{3,}', '\\n\\n', t)
     return t
 
 
@@ -244,8 +239,7 @@ def _bloques_personas(texto: str) -> List[Dict[str, Any]]:
     Cada bloque empieza con 'DNI :' en una linea nueva."""
     bloques = []
     # Separar por lineas que empiezan con DNI :
-    partes = re.split(r'
-(?=DNI\s*:\s*\d)', texto)
+    partes = re.split(r'\n(?=DNI\s*:\s*\d)', texto)
     for parte in partes:
         if not _campo(parte, "DNI"):
             continue
@@ -463,8 +457,7 @@ def _parsear_meta_familia_2(db: Session, texto: str, dni_ctx: Optional[str], res
 
 def _parsear_meta_empresas(db: Session, texto: str, dni_ctx: Optional[str], res: LederResult):
     """Parsea META | EMPRESAS: vincula persona a empresas."""
-    for bloque in re.split(r'
-(?=DNI\s*:\s*\d)', texto):
+    for bloque in re.split(r'\n(?=DNI\s*:\s*\d)', texto):
         dni_str = _campo(bloque, "DNI")
         if not dni_str:
             continue
@@ -629,8 +622,7 @@ def _parsear_meta_complement(
 def _detectar_tipo(msg: str) -> Optional[str]:
     """Detecta el tipo de bloque LEDER_BOT."""
     # Normalizar: tomar la primera linea con [#LEDER_BOT]
-    lineas = msg.split('
-')
+    lineas = msg.split('\n')
     titulo = ""
     for l in lineas:
         if "[#LEDER_BOT]" in l:
