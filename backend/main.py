@@ -503,21 +503,22 @@ def api_enriquecer_empresa(ruc: str, db: Session = Depends(get_db), user: Usuari
 
     from consultas.sunat_scraper import SunatScraper, SunatScraperError, CaptchaDetectedError
 
-    # SUNAT usa reCAPTCHA v3 que requests no puede resolver.
-    # Intentamos apiperu.dev primero (requiere CONSULTA_TOKEN).
-    # El scraper directo queda como respaldo por si SUNAT cambia.
-    from consultas.reniec_sunat import ConsultaPeru
+    # Intentar scraper directo de SUNAT primero (gratuito).
+    # Si falla, intentar apiperu.dev como respaldo (requiere CONSULTA_TOKEN).
     try:
-        api = ConsultaPeru()
-        data = api.consultar_ruc(ruc)
-        data["representante_legal"] = None
-    except Exception:
-        # Fallback: intentar scraper directo
+        scraper = SunatScraper()
+        data = scraper.consultar_ruc(ruc)
+    except (CaptchaDetectedError, SunatScraperError) as e1:
+        # Fallback: apiperu.dev
+        from consultas.reniec_sunat import ConsultaPeru
         try:
-            scraper = SunatScraper()
-            data = scraper.consultar_ruc(ruc)
-        except (CaptchaDetectedError, SunatScraperError) as e2:
-            raise HTTPException(status_code=422, detail=str(e2))
+            api = ConsultaPeru()
+            data = api.consultar_ruc(ruc)
+        except Exception as e2:
+            raise HTTPException(
+                status_code=422,
+                detail=f"SUNAT: {e1}. apiperu: {e2}" if str(e2) != str(e1) else str(e1),
+            )
 
     # Mapeo de campos SUNAT -> modelo
     if data.get("nombre_o_razon_social"):
