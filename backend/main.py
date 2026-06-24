@@ -75,42 +75,46 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan: ejecuta migraciones Alembic al arrancar y crea admin por defecto.
-
-    Las migraciones via Alembic son seguras (solo ejecutan DDL si hay cambios
-    pendientes). Esto evita tener que ejecutar 'alembic upgrade head' manualmente
-    en cada deploy de Render.
+    Lifespan: migraciones, pg_trgm, admin por defecto.
+    Todo error es no-fatal y se loggea.
     """
-    # 1. Migraciones Alembic
     try:
-        from alembic.config import Config as AlembicConfig
-        from alembic import command
-        alembic_cfg = AlembicConfig("alembic.ini")
-        # Asegurar que la tabla alembic_version existe
-        command.ensure_version(alembic_cfg)
-        # Stamp: marca la migracion como aplicada (no-op si ya lo esta)
-        command.stamp(alembic_cfg, "head")
-        # Upgrade: aplica migraciones pendientes (no-op si ya esta al dia)
-        command.upgrade(alembic_cfg, "head")
-    except Exception as e:
-        print(f"[lifespan] Alembic skipped: {e}")
+        # 1. Migraciones Alembic
+        try:
+            from alembic.config import Config as AlembicConfig
+            from alembic import command
+            alembic_cfg = AlembicConfig("alembic.ini")
+            command.ensure_version(alembic_cfg)
+            command.stamp(alembic_cfg, "head")
+            command.upgrade(alembic_cfg, "head")
+        except Exception as e:
+            print(f"[lifespan] Alembic: {e}")
 
-    # 2. Extension pg_trgm
-    try:
-        from sqlalchemy import text as sa_text
-        from database import engine as _eng
-        with _eng.connect() as c:
-            c.execute(sa_text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-            c.commit()
-    except Exception as e:
-        print(f"[lifespan] pg_trgm error (non-fatal): {e}")
+        # 2. pg_trgm
+        try:
+            from sqlalchemy import text as sa_text
+            from database import engine as _eng
+            with _eng.connect() as c:
+                c.execute(sa_text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+                c.commit()
+        except Exception as e:
+            print(f"[lifespan] pg_trgm: {e}")
 
-    # 3. Usuario admin por defecto
-    db = next(get_db())
-    try:
-        seed_usuario_admin(db)
-    finally:
-        db.close()
+        # 3. Admin
+        try:
+            from database import SessionLocal
+            db = SessionLocal()
+            try:
+                seed_usuario_admin(db)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[lifespan] seed_admin: {e}")
+
+    except Exception as e:
+        print(f"[lifespan] Error: {e}")
+        import traceback
+        traceback.print_exc()
 
     yield
 
