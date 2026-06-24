@@ -5,12 +5,8 @@ Implementa relaciones bidireccionales: al crear una relación,
 se crea automáticamente su inversa en la misma transacción.
 Al eliminar, se elimina también la inversa.
 
-Mapeo de inversos:
-  padre  ↔ hijo
-  madre  ↔ hija
-  hermano ↔ hermano (simétrica)
-  hermana ↔ hermana (simétrica)
-  conyuge ↔ conyuge (simétrica)
+Al crear o eliminar relaciones, invalida automáticamente el
+caché de parentescos para reflejar los cambios en la próxima consulta.
 """
 
 from typing import Optional, List
@@ -22,6 +18,7 @@ from crud import (
     obtener_persona_por_dni,
     registrar_auditoria,
 )
+from parentesco import invalidar_cache_parentesco
 
 # Mapeo de tipos de relación a sus inversos
 INVERSO = {
@@ -119,6 +116,7 @@ def crear_relacion_bidireccional(
         )
 
         db.commit()
+        invalidar_cache_parentesco()
 
         return {
             "mensaje": f"Relación '{tipo_directo}' creada: {origen.nombre_completo} → {destino.nombre_completo}",
@@ -173,6 +171,7 @@ def eliminar_relacion_bidireccional(
             "DELETE", "Relacion", str(relacion_id),
         )
         db.commit()
+        invalidar_cache_parentesco()
         return True
     except Exception:
         db.rollback()
