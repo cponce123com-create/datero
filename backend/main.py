@@ -86,11 +86,10 @@ async def lifespan(app: FastAPI):
         from alembic.config import Config as AlembicConfig
         from alembic import command
         alembic_cfg = AlembicConfig("alembic.ini")
-        # Stamp primero: si las tablas ya existen, marca la migracion como aplicada
-        try:
-            command.stamp(alembic_cfg, "head")
-        except Exception:
-            pass  # Si stamp falla (poco probable), upgrade lo intentara
+        # Asegurar que la tabla alembic_version existe
+        command.ensure_version(alembic_cfg)
+        # Stamp: marca la migracion como aplicada (no-op si ya lo esta)
+        command.stamp(alembic_cfg, "head")
         # Upgrade: aplica migraciones pendientes (no-op si ya esta al dia)
         command.upgrade(alembic_cfg, "head")
     except Exception as e:
