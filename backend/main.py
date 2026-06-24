@@ -50,7 +50,7 @@ from schemas import (
     FichaPersonaOut, BusquedaPersonaOut,
     ArbolOut, ArbolNodo,
     LoginRequest, TokenResponse, UsuarioOut,
-    AuditoriaOut, AuditoriaLista, SmartImportOut, EmpresaImportOut,
+    AuditoriaOut, AuditoriaLista, ImportarRequest, ImportOut,
     EmpresaCreate, EmpresaUpdate, EmpresaOut, EmpresaBrief,
     PersonaEmpresaCreate, PersonaEmpresaOut,
     PersonaEmpresaPersonaOut, PersonaEmpresaEmpresaOut,
@@ -67,7 +67,7 @@ from services.persona_service import (
     eliminar_persona_con_auditoria,
     actualizar_persona_con_auditoria,
 )
-from services.leder_parser import procesar_texto_leder
+from services.import_service import ejecutar_importacion
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -647,19 +647,48 @@ def _ejecutar_enriquecimiento(user_id: int, user_username: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LEDER DATA TELEGRAM IMPORT
+# IMPORTADOR UNIFICADO
 # ═══════════════════════════════════════════════════════════════════════════════
+# Un solo endpoint para todos los formatos de importacion (CSV, batch RUC,
+# macro SUNAT 21 columnas, reporte LEDER individual, export Telegram LEDER).
+# La logica vive en services/import_service.py para evitar la duplicacion
+# que existia entre _batch_import, api_importar_empresas_inteligente y
+# api_db_importar.
 
-@app.post("/api/importar/leder-debug")
-def api_leder_debug(
+@app.post("/api/importar", response_model=ImportOut, status_code=status.HTTP_201_CREATED)
+def api_importar(
+    datos: ImportarRequest,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Importa datos en cualquiera de los formatos soportados.
+
+    Si no se especifica `formato` (o se envia "auto"), se autodetecta:
+    - `personas` presente               -> csv
+    - contiene "[#LEDER_BOT]"           -> leder_telegram
+    - cabecera de la macro SUNAT        -> sunat_macro
+    - bloque con DNI/NOMBRES/APELLIDOS  -> leder_individual
+    - listado tabulado RUC + nombre     -> ruc_batch
+    """
+    try:
+        return ejecutar_importacion(db, datos, user.id, user.username)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error en importacion: {str(e)}")
+
+
+@app.post("/api/importar/debug")
+def api_importar_debug(
     body: dict = Body(...),
     db: Session = Depends(get_db),
     user: Usuario = Depends(requiere_rol("admin")),
 ):
-    """Debug: muestra como se ve el texto despues de procesar."""
+    """Herramienta de diagnostico: muestra como se ve un export de Telegram
+    LEDER tras el preprocesamiento, sin escribir nada en la base de datos."""
     raw = body.get("texto", "")
-    from services.leder_parser import _strip_html, _detectar_tipo, _es_continuacion, _dni_limpio, _bloques_personas, _campo
-    import re
+    from services.leder_parser import _strip_html, _detectar_tipo, _es_continuacion, _dni_limpio, _bloques_personas
     limpio = _strip_html(raw)
     limpio = limpio.replace("\r\n", "\n").replace("\r", "\n")
     partes = re.split(r"(?=\[#LEDER_BOT\])", limpio)
@@ -667,23 +696,14 @@ def api_leder_debug(
     for i, p in enumerate(partes):
         p = p.strip()
         if len(p) < 10: continue
-        tipo = _detectar_tipo(p)
-        cont = _es_continuacion(p)
-        dni = _dni_limpio(p)
-        blqs = len(_bloques_personas(p))
         info.append({
-            "idx": i, "len": len(p), "tipo": tipo,
-            "continuacion": cont, "dni": dni,
-            "bloques_personas": blqs,
-            "preview": p[:120],
+            "idx": i, "len": len(p), "tipo": _detectar_tipo(p),
+            "continuacion": _es_continuacion(p), "dni": _dni_limpio(p),
+            "bloques_personas": len(_bloques_personas(p)), "preview": p[:120],
         })
-    # Conteo por tipo
     from collections import Counter
     tipos_count = Counter(p["tipo"] for p in info)
-
-    # Buscar partes que parezcan META pero no se detectaron (tienen "META" pero no "|")
     metas_perdidas = [p for p in info if "META" in (p.get("preview") or "") and "|" not in (p.get("preview") or "")[:60]]
-
     return {
         "total_partes": len(partes),
         "partes_procesables": len(info),
@@ -693,364 +713,6 @@ def api_leder_debug(
         "primeros_300_chars": limpio[:300],
         "partes": info[:25],
     }
-
-
-@app.post("/api/importar/leder-telegram", status_code=status.HTTP_201_CREATED)
-def api_importar_leder_telegram(
-    body: dict = Body(...),
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
-    """Importa datos desde exportacion Telegram de LEDER DATA BOT.
-
-    El texto debe contener los mensajes del bot @LEDER_DATA_BOT con formato:
-    - META [PREMIUM] → crea/actualiza persona
-    - META | FAMILIA [1|2] [PREMIUM] → crea personas + relaciones familiares
-    - META | EMPRESAS [PREMIUM] → crea empresas + vinculos persona→empresa
-    - META | SUNAT [PREMIUM] → crea/actualiza empresa
-    - META | SUELDOS/TELEFONOS/CORREOS/VEHICULOS → agrega notas a persona
-    """
-    raw = body.get("texto", "")
-    if not raw.strip():
-        raise HTTPException(status_code=400, detail="No hay datos para importar")
-
-    # Debug: contar cuantos [#LEDER_BOT] hay
-    import re as _re
-    msgs_raw = _re.split(r"(?=\[#LEDER_BOT\])", raw)
-    total_raw = len([m for m in msgs_raw if len(m.strip()) > 20])
-
-    result = procesar_texto_leder(db, raw)
-
-    partes = []
-    if result.p:
-        partes.append(f"{result.p} persona(s)")
-    if result.r:
-        partes.append(f"{result.r} relacion(es)")
-    if result.e:
-        partes.append(f"{result.e} empresa(s)")
-    if result.v:
-        partes.append(f"{result.v} vinculo(s)")
-
-    errores_str = f" ({len(result.err)} error(es))" if result.err else ""
-    mensaje = f"Importacion completada: {', '.join(partes) if partes else 'sin cambios'}{errores_str}"
-
-    return {
-        "mensaje": mensaje,
-        "personas": result.p,
-        "relaciones": result.r,
-        "empresas": result.e,
-        "vinculos": result.v,
-        "errores": result.err[:5] if result.err else [],
-        "_debug": {
-            "mensajes_detectados": total_raw,
-            "mensajes_procesados": result.p + result.r + result.e + result.v,
-            "primeros_200_chars": raw[:200],
-        },
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# EMPRESA SMART IMPORT (SUNAT macro 21 columnas)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-SUNAT_COLUMNAS = [
-    "ruc_raw", "ruc_nombre", "tipo_contribuyente", "nombre_comercial",
-    "fecha_inscripcion", "fecha_inicio_actividades", "estado", "condicion",
-    "domicilio_fiscal", "sistema_emision", "actividad_comercio_exterior",
-    "sistema_contabilidad", "actividad_economica", "comprobantes_autorizados",
-    "sistema_emision_electronica", "emisor_electronico_desde",
-    "comprobantes_electronicos", "afiliado_ple", "padrones",
-    "representantes_legales", "establecimientos",
-]
-
-
-def _parsear_nombre_apellidos_ruc10(texto: str):
-    """Parsea el campo 'Número de RUC:' de un RUC 10.
-    Formato: 'RUC - APELLIDO1 APELLIDO2 NOMBRES...'
-    Retorna (nombres, apellido_paterno, apellido_materno)
-    """
-    if " - " in texto:
-        texto = texto.split(" - ", 1)[1].strip()
-    partes = texto.split()
-    if len(partes) >= 3:
-        ap_p = partes[0]
-        ap_m = partes[1]
-        nom = " ".join(partes[2:])
-        return nom, ap_p, ap_m
-    elif len(partes) == 2:
-        return "", partes[0], partes[1]
-    elif len(partes) == 1:
-        return "", partes[0], None
-    return "", "", None
-
-
-def _parsear_representante_legal(texto: str):
-    """Parsea el campo 'Representates legales'.
-    Formato: 'NOMBRE APELLIDOS - CARGO'
-    o 'No se encontraron representantes legales'
-    Retorna (nombre_completo, cargo) o None.
-    """
-    texto = texto.strip()
-    if not texto or texto.lower().startswith("no se encontr"):
-        return None, None
-    if " - " in texto:
-        nombre, cargo = texto.split(" - ", 1)
-        return nombre.strip(), cargo.strip()
-    # Sin separador, probablemente solo nombre
-    return texto, "representante legal"
-
-
-@app.post("/api/empresas/importar-inteligente", response_model=EmpresaImportOut, status_code=status.HTTP_201_CREATED)
-def api_importar_empresas_inteligente(
-    body: dict = Body(...),
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(requiere_rol("admin")),
-):
-    """Importa datos de empresas desde el formato tabulado de la macro SUNAT (21 columnas).
-
-    Soporta:
-    - RUC 20/30: crea/actualiza Empresa con todos los campos SUNAT
-    - RUC 10: crea Persona + Empresa RUC10 + vinculo automatico
-    - Representante legal: parsea y vincula como 'representante legal'
-    - Etiqueta opcional: asigna a todas las entidades creadas
-    """
-    raw = body.get("texto", "")
-    etiqueta_nombre = body.get("etiqueta", "").strip()
-
-    lineas = [l.strip() for l in raw.strip().split("\n") if l.strip()]
-    if not lineas:
-        raise HTTPException(status_code=400, detail="No hay datos para importar")
-
-    # Detectar si tiene cabecera de columnas SUNAT
-    tiene_header = "INGRESAR EL NUMERO DE RUC" in lineas[0].upper()
-    inicio = 1 if tiene_header else 0
-
-    result = EmpresaImportOut(mensaje="", total_procesadas=0)
-
-    # Preparar etiqueta si se especifico
-    etiqueta_id = None
-    if etiqueta_nombre:
-        e_existente = db.query(Etiqueta).filter(Etiqueta.nombre == etiqueta_nombre).first()
-        if not e_existente:
-            e_existente = Etiqueta(nombre=etiqueta_nombre)
-            db.add(e_existente)
-            db.flush()
-        etiqueta_id = e_existente.id
-
-    for i in range(inicio, len(lineas)):
-        partes = lineas[i].split("\t")
-        if len(partes) < 2:
-            continue
-
-        ruc = partes[0].strip()
-        if len(ruc) != 11 or not ruc.isdigit():
-            result.errores.append(f"Línea {i+1}: RUC inválido '{ruc}'")
-            continue
-
-        result.total_procesadas += 1
-        tipo_ruc = ruc[0]
-
-        try:
-            if tipo_ruc == "1":
-                # ── RUC 10: Persona Natural con Negocio ──
-                dni = ruc[2:10]  # 8 dígitos
-                # Extraer nombre del campo 'Número de RUC:'
-                nombre_texto = partes[1].strip() if len(partes) > 1 else ""
-                nom, ap_p, ap_m = _parsear_nombre_apellidos_ruc10(nombre_texto)
-
-                # Buscar o crear persona
-                persona = db.query(Persona).filter(Persona.dni == dni).first()
-                if not persona:
-                    persona = Persona(
-                        dni=dni,
-                        nombres=nom or "PENDIENTE",
-                        apellido_paterno=ap_p or "PENDIENTE",
-                        apellido_materno=ap_m,
-                    )
-                    db.add(persona)
-                    db.flush()
-                    result.personas_creadas += 1
-                    if etiqueta_id:
-                        db.add(PersonaEtiqueta(persona_id=persona.id, etiqueta_id=etiqueta_id))
-                        result.etiquetados += 1
-
-                # Buscar o crear empresa RUC 10
-                empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
-                if empresa:
-                    result.empresas_actualizadas += 1
-                else:
-                    empresa = Empresa(ruc=ruc, nombre=persona.nombre_completo)
-                    db.add(empresa)
-                    db.flush()
-                    result.empresas_creadas += 1
-                    if etiqueta_id:
-                        db.add(EmpresaEtiqueta(empresa_id=empresa.id, etiqueta_id=etiqueta_id))
-                        result.etiquetados += 1
-
-                # Vincular persona -> empresa si no existe ya
-                vinculo_existente = db.query(PersonaEmpresa).filter(
-                    PersonaEmpresa.persona_id == persona.id,
-                    PersonaEmpresa.empresa_id == empresa.id,
-                ).first()
-                if not vinculo_existente:
-                    db.add(PersonaEmpresa(
-                        persona_id=persona.id,
-                        empresa_id=empresa.id,
-                        cargo="titular - persona natural con negocio",
-                    ))
-                    result.vinculos_creados += 1
-
-                # Llenar datos SUNAT desde las columnas
-                _aplicar_campos_sunat(empresa, partes)
-
-            elif tipo_ruc in ("2", "3"):
-                # ── RUC 20/30: Empresa Juridica ──
-                # Extraer nombre del campo 'Número de RUC:'
-                nombre_empresa = ""
-                if len(partes) > 1:
-                    txt = partes[1].strip()
-                    if " - " in txt:
-                        nombre_empresa = txt.split(" - ", 1)[1].strip()
-                    else:
-                        nombre_empresa = txt
-
-                empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
-                if empresa:
-                    result.empresas_actualizadas += 1
-                else:
-                    empresa = Empresa(ruc=ruc, nombre=nombre_empresa or f"EMPRESA {ruc}")
-                    db.add(empresa)
-                    db.flush()
-                    result.empresas_creadas += 1
-                    if etiqueta_id:
-                        db.add(EmpresaEtiqueta(empresa_id=empresa.id, etiqueta_id=etiqueta_id))
-                        result.etiquetados += 1
-
-                _aplicar_campos_sunat(empresa, partes)
-
-                # Procesar representante legal
-                if len(partes) > 19:
-                    rep_texto = partes[19].strip()
-                    rep_nombre, rep_cargo = _parsear_representante_legal(rep_texto)
-                    if rep_nombre:
-                        empresa.representante_legal_nombre = rep_nombre
-                        empresa.representante_legal_dni = ""
-
-                        # Buscar persona por nombre (aproximado)
-                        rep_persona = None
-                        if rep_nombre:
-                            rep_like = db.query(Persona).filter(
-                                Persona.activo == True,
-                                Persona.nombres.ilike(f"%{rep_nombre.split()[-1]}%")
-                            ).first()
-                            rep_persona = rep_like
-
-                        if not rep_persona:
-                            # Crear persona con datos pendientes
-                            nombre_partes = rep_nombre.split()
-                            if len(nombre_partes) >= 2:
-                                rep_nom = " ".join(nombre_partes[:-2]) if len(nombre_partes) > 2 else nombre_partes[0]
-                                rep_ap = nombre_partes[-2] if len(nombre_partes) >= 2 else ""
-                                rep_am = nombre_partes[-1] if len(nombre_partes) >= 2 else None
-                            else:
-                                rep_nom = rep_nombre
-                                rep_ap = "PENDIENTE"
-                                rep_am = None
-
-                            rep_persona = Persona(
-                                dni=f"REP-{ruc}",
-                                nombres=rep_nom or "PENDIENTE",
-                                apellido_paterno=rep_ap or "PENDIENTE",
-                                apellido_materno=rep_am,
-                            )
-                            db.add(rep_persona)
-                            db.flush()
-                            result.personas_creadas += 1
-                            if etiqueta_id:
-                                db.add(PersonaEtiqueta(persona_id=rep_persona.id, etiqueta_id=etiqueta_id))
-                                result.etiquetados += 1
-
-                        cargo_real = rep_cargo or "representante legal"
-                        vinculo_rep = db.query(PersonaEmpresa).filter(
-                            PersonaEmpresa.persona_id == rep_persona.id,
-                            PersonaEmpresa.empresa_id == empresa.id,
-                            PersonaEmpresa.cargo == cargo_real,
-                        ).first()
-                        if not vinculo_rep:
-                            db.add(PersonaEmpresa(
-                                persona_id=rep_persona.id,
-                                empresa_id=empresa.id,
-                                cargo=cargo_real,
-                            ))
-                            result.representantes_vinculados += 1
-                            result.vinculos_creados += 1
-
-            else:
-                result.errores.append(f"RUC {ruc}: tipo no soportado ({tipo_ruc})")
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            result.errores.append(f"RUC {ruc}: {str(e)[:100]}")
-
-    db.commit()
-
-    partes_msg = []
-    if result.empresas_creadas > 0:
-        partes_msg.append(f"{result.empresas_creadas} empresa(s) creada(s)")
-    if result.empresas_actualizadas > 0:
-        partes_msg.append(f"{result.empresas_actualizadas} actualizada(s)")
-    if result.personas_creadas > 0:
-        partes_msg.append(f"{result.personas_creadas} persona(s) creada(s)")
-    if result.vinculos_creados > 0:
-        partes_msg.append(f"{result.vinculos_creados} vinculo(s)")
-    if result.representantes_vinculados > 0:
-        partes_msg.append(f"{result.representantes_vinculados} rep. legal(es)")
-    if result.etiquetados > 0:
-        partes_msg.append(f"{result.etiquetados} etiquetado(s)")
-
-    if not partes_msg:
-        partes_msg.append("Todo ya existia en BD")
-
-    errores_str = f" ({len(result.errores)} error(es))" if result.errores else ""
-    result.mensaje = f"Importacion completada: {', '.join(partes_msg)}{errores_str}"
-
-    return result
-
-
-def _aplicar_campos_sunat(empresa, partes):
-    """Aplica los campos SUNAT desde las columnas tabuladas al modelo Empresa.
-
-    Mapeo por indice:
-    0=ruc, 1=nombre, 2=tipo_contribuyente, 3=nombre_comercial,
-    4=fecha_inscripcion, 5=fecha_inicio, 6=estado, 7=condicion,
-    8=direccion, 9=sistema_emision, 10=act_comercio_ext,
-    11=sistema_contabilidad, 12=actividad_economica,
-    13=comprobantes_autorizados, 14=sistema_emision_electronica,
-    15=emisor_electronico_desde, 16=comprobantes_electronicos,
-    17=afiliado_ple, 18=padrones, 19=representantes, 20=establecimientos
-    """
-    def v(idx):
-        return partes[idx].strip() if len(partes) > idx and partes[idx].strip() else None
-
-    if v(2): empresa.tipo_contribuyente = v(2)
-    if v(3): empresa.nombre_comercial = v(3)
-    if v(4): empresa.fecha_inscripcion = v(4)
-    if v(5): empresa.fecha_inicio_actividades = v(5)
-    if v(6): empresa.estado = v(6)
-    if v(7): empresa.condicion = v(7)
-    if v(8): empresa.direccion = v(8)
-    if v(9): empresa.sistema_emision = v(9)
-    if v(10): empresa.actividad_comercio_exterior = v(10)
-    if v(11): empresa.sistema_contabilidad = v(11)
-    if v(12): empresa.actividad_economica = v(12)
-    if v(13): empresa.comprobantes_autorizados = v(13)
-    if v(14): empresa.sistema_emision_electronica = v(14)
-    if v(15): empresa.emisor_electronico_desde = v(15)
-    if v(16): empresa.comprobantes_electronicos = v(16)
-    if v(17): empresa.afiliado_ple = v(17)
-    if v(18): empresa.padrones = v(18)
-    if v(20): empresa.establecimientos = v(20)
 
 
 @app.post("/api/persona-empresa", status_code=status.HTTP_201_CREATED)
@@ -1107,27 +769,6 @@ def api_db_todas(db: Session = Depends(get_db), user: Usuario = Depends(get_curr
     from models import Persona as P
     return db.query(P).filter(P.activo == True).order_by(P.apellido_paterno, P.nombres).all()
 
-@app.post("/api/db/importar", status_code=status.HTTP_201_CREATED)
-def api_db_importar(personas: List[PersonaCreate], db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
-    creados = 0
-    errores = []
-    for datos in personas:
-        try:
-            from models import Persona as P
-            existente = db.query(P).filter(P.dni == datos.dni).first()
-            if existente:
-                errores.append(f"DNI {datos.dni}: ya existe")
-                continue
-            persona = P(dni=datos.dni, nombres=datos.nombres, apellido_paterno=datos.apellido_paterno, apellido_materno=datos.apellido_materno, fecha_nacimiento=datos.fecha_nacimiento, foto_url=datos.foto_url, notas=datos.notas)
-            db.add(persona)
-            creados += 1
-        except Exception as e:
-            errores.append(f"DNI {datos.dni}: {str(e)}")
-    db.commit()
-    registrar_auditoria(db, user.id, user.username, "CREATE", "Importar", f"{creados} personas")
-    return {"mensaje": f"Importacion completada: {creados} creados, {len(errores)} errores", "creados": creados, "errores": errores}
-
-
 @app.post("/api/db/reset")
 def api_db_reset(confirmacion: dict = Body(...), db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
     """Elimina TODOS los datos de la base de datos."""
@@ -1143,264 +784,6 @@ def api_db_reset(confirmacion: dict = Body(...), db: Session = Depends(get_db), 
     db.commit()
     registrar_auditoria(db, user.id, user.username, "DELETE", "Reset", "TODOS", {"accion": "reset_total"})
     return {"mensaje": "Base de datos reiniciada exitosamente. Todas las tablas han sido limpiadas."}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SMART IMPORTER
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.post("/api/db/importar-inteligente", status_code=status.HTTP_201_CREATED)
-def api_importar_inteligente(texto: dict = Body(...), db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
-    from models import PersonaEtiqueta as PE, Etiqueta as ET
-    try:
-        return _batch_import(texto, db, user)
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-def _batch_import(texto, db, user):
-    from models import PersonaEtiqueta as PE, Etiqueta as ET, PersonaEmpresa as PEM, Empresa as EMP
-    raw = texto.get("texto", "")
-    etiqueta_nombre = texto.get("etiqueta", "").strip()
-
-    primera_linea = raw.strip().split("\n")[0] if raw.strip() else ""
-    es_batch = "	" in primera_linea or (len(primera_linea) >= 11 and primera_linea[2:10].isdigit())
-
-    if es_batch:
-        errores = []
-        etiqueta_id = None
-        if etiqueta_nombre:
-            e_existente = db.query(ET).filter(ET.nombre == etiqueta_nombre).first()
-            if not e_existente:
-                e_existente = ET(nombre=etiqueta_nombre)
-                db.add(e_existente)
-                db.flush()
-            etiqueta_id = e_existente.id
-
-        # Clasificar por tipo de RUC
-        personas_data = {}
-        empresas_data = {}
-        for line in raw.strip().split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split("\t")
-            ruc = parts[0].strip() if len(parts) > 0 else ""
-            nombre_completo = parts[1].strip() if len(parts) > 1 else ""
-            if not nombre_completo:
-                m = re.match(r"^(\d{11})\s+(.+)", line)
-                if m:
-                    ruc = m.group(1)
-                    nombre_completo = m.group(2).strip()
-            if not nombre_completo:
-                continue
-            if len(ruc) != 11 or not ruc.isdigit():
-                errores.append(f"RUC invalido ({ruc}): {nombre_completo}")
-                continue
-
-            pd = ruc[0]
-            if pd == "1":
-                dni = ruc[2:10]
-                if not dni.isdigit():
-                    errores.append(f"DNI invalido en RUC {ruc}: {nombre_completo}")
-                    continue
-                nombre_parts = nombre_completo.split()
-                if len(nombre_parts) >= 3:
-                    ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = " ".join(nombre_parts[2:])
-                elif len(nombre_parts) == 2:
-                    ap_p = nombre_parts[0]; ap_m = nombre_parts[1]; nom = ""
-                else:
-                    ap_p = nombre_parts[0] if nombre_parts else ""; ap_m = None; nom = ""
-                personas_data[dni] = (nom, ap_p, ap_m)
-            elif pd in ("2", "3"):
-                empresas_data[ruc] = nombre_completo
-            else:
-                errores.append(f"Tipo RUC no reconocido ({pd}): {nombre_completo}")
-
-        tp = len(personas_data)
-        te = len(empresas_data)
-        if tp == 0 and te == 0:
-            return SmartImportOut(mensaje="No se encontraron datos validos", persona_dni=None, errores=errores)
-
-        # PERSONAS (RUC 10)
-        pc = 0; pet = 0
-        if personas_data:
-            dnis_exist = set(row[0] for row in db.query(Persona.dni).filter(Persona.dni.in_(list(personas_data.keys()))).all())
-            dnis_exist_tag = set()
-            if etiqueta_id and dnis_exist:
-                dnis_exist_tag = set(row[0] for row in db.query(Persona.dni).join(PE, PE.persona_id == Persona.id).filter(Persona.dni.in_(list(dnis_exist)), PE.etiqueta_id == etiqueta_id).all())
-            objs = []; dni_id_map = {}
-            for dni, (nom, ap_p, ap_m) in personas_data.items():
-                if dni not in dnis_exist:
-                    objs.append(Persona(dni=dni, nombres=nom, apellido_paterno=ap_p, apellido_materno=ap_m))
-                    pc += 1
-            if objs:
-                db.add_all(objs); db.flush()
-                for p in objs: dni_id_map[p.dni] = p.id
-            tag_objs = []
-            if etiqueta_id:
-                for dni, _ in personas_data.items():
-                    pid = dni_id_map.get(dni)
-                    if not pid and dni in dnis_exist and dni not in dnis_exist_tag:
-                        pid_row = db.query(Persona.id).filter(Persona.dni == dni).first()
-                        pid = pid_row[0] if pid_row else None
-                    if pid:
-                        tag_objs.append(PE(persona_id=pid, etiqueta_id=etiqueta_id))
-                        pet += 1
-                if tag_objs: db.add_all(tag_objs)
-
-        # EMPRESAS (RUC 20/30)
-        ec = 0; eet = 0
-        if empresas_data:
-            rucs_exist = set(row[0] for row in db.query(EMP.ruc).filter(EMP.ruc.in_(list(empresas_data.keys()))).all())
-            rucs_exist_tag = set()
-            if etiqueta_id and rucs_exist:
-                rucs_exist_tag = set(row[0] for row in db.query(EMP.ruc).join(EmpresaEtiqueta, EmpresaEtiqueta.empresa_id == EMP.id).filter(EMP.ruc.in_(list(rucs_exist)), EmpresaEtiqueta.etiqueta_id == etiqueta_id).all())
-            e_objs = []; ruc_id_map = {}
-            for ruc, nombre in empresas_data.items():
-                if ruc not in rucs_exist:
-                    e_objs.append(EMP(ruc=ruc, nombre=nombre))
-                    ec += 1
-            if e_objs:
-                db.add_all(e_objs); db.flush()
-                for e in e_objs: ruc_id_map[e.ruc] = e.id
-            etag_objs = []
-            if etiqueta_id:
-                for ruc, _ in empresas_data.items():
-                    eid = ruc_id_map.get(ruc)
-                    if not eid and ruc in rucs_exist and ruc not in rucs_exist_tag:
-                        eid_row = db.query(EMP.id).filter(EMP.ruc == ruc).first()
-                        eid = eid_row[0] if eid_row else None
-                    if eid:
-                        etag_objs.append(EmpresaEtiqueta(empresa_id=eid, etiqueta_id=etiqueta_id))
-                        eet += 1
-                if etag_objs: db.add_all(etag_objs)
-
-        db.commit()
-        tet = pet + eet
-        partes = []
-        if pc > 0: partes.append(f"{pc} persona(s) creada(s)")
-        if ec > 0: partes.append(f"{ec} empresa(s) creada(s)")
-        if tet > 0: partes.append(f"{tet} etiquetado(s) como '{etiqueta_nombre}'")
-        if not partes: partes.append("Todo ya existia")
-        return SmartImportOut(
-            mensaje=f"Batch: {', '.join(partes)}",
-            persona_dni=None,
-            personas_creadas=pc,
-            empresas_creadas=ec,
-            etiquetados=tet,
-            errores=errores,
-        )
-    # ── MODO LEDER DATA (individual) ──
-    errores = []
-    persona = None
-    trabajo_reg = None
-    familiares_creados = 0
-
-    etiqueta_id = None
-    if etiqueta_nombre:
-        e_existente = db.query(ET).filter(ET.nombre == etiqueta_nombre).first()
-        if not e_existente:
-            e_existente = ET(nombre=etiqueta_nombre)
-            db.add(e_existente)
-            db.flush()
-        etiqueta_id = e_existente.id
-
-    m = re.search(r'DNI\s*:\s*(\d+)', raw)
-    dni = m.group(1).strip() if m else None
-    if not dni:
-        raise HTTPException(status_code=400, detail="No se encontro DNI en el texto")
-
-    m_nombres = re.search(r'NOMBRES\s*:\s*(.+)', raw)
-    m_ape = re.search(r'APELLIDOS\s*:\s*(.+)', raw)
-    m_fec = re.search(r'FECHA NACIMIENTO\s*:\s*(\d{2}/\d{2}/\d{4})', raw)
-
-    nombres = m_nombres.group(1).strip() if m_nombres else ""
-    apellidos = m_ape.group(1).strip() if m_ape else ""
-
-    ape_parts = apellidos.split() if apellidos else []
-    ap_paterno = ape_parts[0] if len(ape_parts) > 0 else ""
-    ap_materno = ape_parts[1] if len(ape_parts) > 1 else None
-
-    fecha_nac = None
-    if m_fec:
-        from datetime import datetime
-        try: fecha_nac = datetime.strptime(m_fec.group(1), "%d/%m/%Y").date()
-        except: pass
-
-    from models import Persona as P
-    existente = db.query(P).filter(P.dni == dni).first()
-    if existente: persona = existente
-    else:
-        persona = P(dni=dni, nombres=nombres, apellido_paterno=ap_paterno, apellido_materno=ap_materno, fecha_nacimiento=fecha_nac)
-        db.add(persona)
-        db.flush()
-        if etiqueta_id:
-            db.add(PE(persona_id=persona.id, etiqueta_id=etiqueta_id))
-
-    m_trabajo_rs = re.search(r'RAZON SOCIAL\s*:\s*(.+)', raw)
-    if m_trabajo_rs:
-        empresa_nombre = m_trabajo_rs.group(1).strip()
-        if empresa_nombre and empresa_nombre != "No se encontro":
-            emp_existente = db.query(EMP).filter(EMP.nombre == empresa_nombre, EMP.activo == True).first()
-            if not emp_existente:
-                emp_existente = EMP(ruc=f"AUTO-{persona.dni}", nombre=empresa_nombre)
-                db.add(emp_existente)
-                db.flush()
-            vinculo_existente = db.query(PEM).filter(PEM.persona_id == persona.id, PEM.empresa_id == emp_existente.id, PEM.cargo == "trabajador").first()
-            if not vinculo_existente:
-                db.add(PEM(persona_id=persona.id, empresa_id=emp_existente.id, cargo="trabajador"))
-                trabajo_reg = empresa_nombre
-
-    lines = raw.split('\n')
-    current_block = {}
-    for i, line in enumerate(lines):
-        line_stripped = line.strip()
-        if line_stripped.startswith('DNI') and ':' in line_stripped:
-            if current_block.get('dni') and current_block.get('tipo'): pass
-            current_block = {'dni': line_stripped.split(':')[1].strip()}
-        elif line_stripped.startswith('APELLIDOS'): current_block['apellidos'] = line_stripped.split(':')[1].strip()
-        elif line_stripped.startswith('NOMBRES'): current_block['nombres'] = line_stripped.split(':')[1].strip()
-        elif line_stripped.startswith('GENERO'): current_block['genero'] = line_stripped.split(':')[1].strip()
-        elif line_stripped.startswith('TIPO') and ':' in line_stripped:
-            current_block['tipo'] = line_stripped.split(':')[1].strip()
-            if current_block.get('dni') and current_block.get('tipo'):
-                try:
-                    fdni = current_block['dni']; fnombres = current_block.get('nombres', ''); fapellidos = current_block.get('apellidos', ''); ftipo = current_block['tipo'].upper().strip()
-                    if fdni == persona.dni: continue
-                    fm = db.query(P).filter(P.dni == fdni).first()
-                    if not fm:
-                        ape_p = fapellidos.split() if fapellidos else ['']
-                        fm = P(dni=fdni, nombres=fnombres, apellido_paterno=ape_p[0] if len(ape_p)>0 else '', apellido_materno=ape_p[1] if len(ape_p)>1 else None)
-                        db.add(fm); db.flush()
-                    origen_id = None; destino_id = None; rel_tipo = None
-                    if ftipo == 'MADRE': origen_id = fm.id; destino_id = persona.id; rel_tipo = 'madre'
-                    elif ftipo == 'PADRE': origen_id = fm.id; destino_id = persona.id; rel_tipo = 'padre'
-                    elif ftipo in ('HIJA','HIJO'): origen_id = persona.id; destino_id = fm.id; rel_tipo = 'padre'
-                    elif ftipo in ('HERMANA','HERMANO'): origen_id = persona.id; destino_id = fm.id; rel_tipo = 'hermano'
-                    elif ftipo in ('HIJASTRA','HIJASTRO'): origen_id = persona.id; destino_id = fm.id; rel_tipo = 'padre'
-                    elif ftipo in ('CONYUGE','ESPOSO','ESPOSA'): origen_id = persona.id; destino_id = fm.id; rel_tipo = 'conyuge'
-                    elif ftipo == 'COMPARTEN HIJOS': origen_id = persona.id; destino_id = fm.id; rel_tipo = 'conyuge'
-                    if origen_id and rel_tipo:
-                        from models import Relacion as REL
-                        r_existente = db.query(REL).filter(REL.persona_origen_id == origen_id, REL.persona_destino_id == destino_id, REL.tipo_relacion == rel_tipo).first()
-                        if not r_existente:
-                            db.add(REL(persona_origen_id=origen_id, persona_destino_id=destino_id, tipo_relacion=rel_tipo, certeza='documento'))
-                            familiares_creados += 1
-                except Exception as e:
-                    errores.append(f"Error familiar DNI {current_block.get('dni','?')}: {str(e)}")
-
-    db.commit()
-
-    mensaje = f"Importado: {persona.nombre_completo}"
-    if trabajo_reg: mensaje += f" - Trabaja en: {trabajo_reg}"
-    if familiares_creados > 0: mensaje += f" - {familiares_creados} familiar(es)"
-    if etiqueta_nombre: mensaje += f" - Etiquetado: {etiqueta_nombre}"
-    if errores: mensaje += f" - {len(errores)} error(es)"
-
-    return SmartImportOut(mensaje=mensaje, persona_dni=persona.dni, familiares_creados=familiares_creados, empresa_registrada=trabajo_reg, errores=errores)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

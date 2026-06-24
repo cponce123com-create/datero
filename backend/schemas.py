@@ -287,29 +287,38 @@ class BusquedaEmpresaOut(BaseModel):
     total: int
 
 
-# ─── Smart Import ─────────────────────────────────────────────────────────────
+# ─── Importador unificado ───────────────────────────────────────────────────
+# Reemplaza a los antiguos SmartImportOut / EmpresaImportOut y a los endpoints
+# /api/db/importar, /api/db/importar-inteligente, /api/empresas/importar-inteligente,
+# /api/importar/leder-telegram. Ver services/import_service.py.
 
-class SmartImportOut(BaseModel):
+FORMATOS_IMPORTACION = (
+    "auto", "csv", "ruc_batch", "sunat_macro", "leder_individual", "leder_telegram",
+)
+
+class ImportarRequest(BaseModel):
+    texto: Optional[str] = None
+    personas: Optional[List[PersonaCreate]] = None
+    etiqueta: Optional[str] = None
+    formato: Optional[str] = Field(
+        "auto",
+        description="auto | csv | ruc_batch | sunat_macro | leder_individual | leder_telegram",
+    )
+
+
+class ImportOut(BaseModel):
     mensaje: str
+    formato_detectado: Optional[str] = None
     persona_dni: Optional[str] = None
-    familiares_creados: int = 0
-    empresa_registrada: Optional[str] = None
-    empresas_creadas: int = 0
-    personas_creadas: int = 0
-    etiquetados: int = 0
-    errores: List[str] = []
-
-
-# ─── Empresa Smart Import (SUNAT macro 21 columnas) ─────────────────────────
-class EmpresaImportOut(BaseModel):
-    mensaje: str
     total_procesadas: int = 0
+    personas_creadas: int = 0
     empresas_creadas: int = 0
     empresas_actualizadas: int = 0
-    personas_creadas: int = 0
     vinculos_creados: int = 0
     representantes_vinculados: int = 0
+    relaciones_creadas: int = 0
     etiquetados: int = 0
+    empresa_registrada: Optional[str] = None
     errores: List[str] = []
 
 
