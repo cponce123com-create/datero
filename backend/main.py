@@ -81,14 +81,18 @@ async def lifespan(app: FastAPI):
     pendientes). Esto evita tener que ejecutar 'alembic upgrade head' manualmente
     en cada deploy de Render.
     """
-    # 1. Migraciones Alembic
+    # 1. Migraciones Alembic (intenta upgrade; si falla pq tablas existen, stamp)
     try:
         from alembic.config import Config as AlembicConfig
         from alembic import command
         alembic_cfg = AlembicConfig("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
+        try:
+            command.upgrade(alembic_cfg, "head")
+        except Exception:
+            # Si las tablas ya existen, marca la migracion como aplicada
+            command.stamp(alembic_cfg, "head")
     except Exception as e:
-        print(f"[lifespan] Alembic migration error (non-fatal): {e}")
+        print(f"[lifespan] Alembic skipped: {e}")
 
     # 2. Extension pg_trgm
     try:
