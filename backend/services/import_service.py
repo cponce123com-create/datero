@@ -62,7 +62,7 @@ def _etiquetar_empresa(db: Session, empresa_id: int, etiqueta_id: Optional[int])
     return True
 
 
-def _obtener_o_crear_persona(db: Session, dni: str, nombres: str = "", ap_paterno: str = "",
+def _obtener_o_crear_persona_legacy(db: Session, dni: str, nombres: str = "", ap_paterno: str = "",
                               ap_materno: Optional[str] = None):
     """Busca una Persona por DNI; si no existe, la crea. Retorna (persona, creada: bool)."""
     persona = db.query(Persona).filter(Persona.dni == dni).first()
@@ -306,7 +306,7 @@ def _importar_ruc_batch(db: Session, texto: str, etiqueta_id: Optional[int], eti
 
     pc = ec = vc = rc = pet = eet = 0
     for pdata in personas_data:
-        persona, creada = _obtener_o_crear_persona(db, pdata["dni"], pdata["nombres"], pdata["ap_p"], pdata["ap_m"])
+        persona, creada = _obtener_o_crear_persona_legacy(db, pdata["dni"], pdata["nombres"], pdata["ap_p"], pdata["ap_m"])
         if creada:
             pc += 1
         if _etiquetar_persona(db, persona.id, etiqueta_id):
@@ -374,7 +374,7 @@ def _importar_sunat_macro(db: Session, texto: str, etiqueta_id: Optional[int], e
             if ruc[0] == "1":
                 dni = ruc[2:10]
                 nom, ap_p, ap_m = _parsear_nombre_ruc10(partes[1].strip() if len(partes) > 1 else "")
-                persona, p_creada = _obtener_o_crear_persona(db, dni, nom, ap_p, ap_m)
+                persona, p_creada = _obtener_o_crear_persona_legacy(db, dni, nom, ap_p, ap_m)
                 if p_creada:
                     out.personas_creadas += 1
                     if _etiquetar_persona(db, persona.id, etiqueta_id):
@@ -427,7 +427,7 @@ def _importar_sunat_macro(db: Session, texto: str, etiqueta_id: Optional[int], e
                         empresa.representante_legal_dni = dni_rep if dni_rep != f"REP-{ruc}" else ""
 
                         # Crear o buscar persona con el DNI real o sintetico
-                        rep_persona, rep_creada = _obtener_o_crear_persona(
+                        rep_persona, rep_creada = _obtener_o_crear_persona_legacy(
                             db, dni_rep,
                             nom_rep if dni_rep.startswith("REP-") else "",
                             ap_p_rep if dni_rep.startswith("REP-") else "",
@@ -495,7 +495,7 @@ def _importar_leder_individual(db: Session, texto: str, etiqueta_id: Optional[in
         except ValueError:
             pass
 
-    persona, creada = _obtener_o_crear_persona(db, dni, nombres, ap_paterno, ap_materno)
+    persona, creada = _obtener_o_crear_persona_legacy(db, dni, nombres, ap_paterno, ap_materno)
     if fecha_nac:
         persona.fecha_nacimiento = fecha_nac
     if creada:
@@ -574,7 +574,7 @@ def _procesar_familiar_leder(db: Session, persona: Persona, block: dict) -> int:
     fnombres = block.get("nombres", "")
     fapellidos = block.get("apellidos", "")
     ape_p = fapellidos.split() if fapellidos else [""]
-    familiar, _ = _obtener_o_crear_persona(
+    familiar, _ = _obtener_o_crear_persona_legacy(
         db, fdni, fnombres, ape_p[0] if ape_p else "", ape_p[1] if len(ape_p) > 1 else None,
     )
 
