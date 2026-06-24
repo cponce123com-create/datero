@@ -82,12 +82,11 @@ def _strip_html(texto: str) -> str:
     t = re.sub(r'<[^>]+>', '', t)
     for entity, char in [
         ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&nbsp;", " "),
-        ("&#10;", "
-"), ("&#13;", ""), ("&#39;", "'"), ("&quot;", "'"),
+        ("&#10;", "\n"), ("&#13;", ""), ("&#39;", "'"), ("&quot;", "'"),
     ]:
         t = t.replace(entity, char)
     t = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), t)
-    t = re.sub(r'\n{3,}', '\\n\\n', t)
+    t = re.sub(r'\n{3,}', '\n\n', t)
     return t
 
 
@@ -152,8 +151,7 @@ def _extraer_edad(fecha_texto: str) -> Optional[str]:
 
 def _nota_persona(persona: Persona, texto: str):
     """Acumula notas en una persona."""
-    sep = "
-"
+    sep = "\n"
     if persona.notas:
         persona.notas += sep + texto
     else:
@@ -679,11 +677,7 @@ def procesar_texto_leder(db: Session, raw: str) -> LederResult:
     """
     res = LederResult()
     raw = _strip_html(raw)
-    raw = raw.replace("
-", "
-").replace("
-", "
-")
+    raw = raw.replace("\n", "\n").replace("\n", "\n")
 
     # Dividir en bloques de [#LEDER_BOT]
     bloques = re.split(r'(?=\[#LEDER_BOT\])', raw)
