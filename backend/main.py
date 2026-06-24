@@ -675,8 +675,11 @@ def api_importar(
     except HTTPException:
         raise
     except Exception as e:
-        import traceback; traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error en importacion: {str(e)}")
+        import traceback, io
+        buf = io.StringIO()
+        traceback.print_exc(file=buf)
+        detalle = buf.getvalue()[:2000]
+        raise HTTPException(status_code=500, detail=f"Error en importacion: {str(e)}\n---\n{detalle}")
 
 
 @app.post("/api/importar/debug")
