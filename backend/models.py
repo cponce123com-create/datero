@@ -43,6 +43,8 @@ class Persona(Base):
     apellido_paterno = Column(String(100), nullable=False)
     apellido_materno = Column(String(100), nullable=True)
     fecha_nacimiento = Column(Date, nullable=True)
+    genero = Column(String(20), nullable=True,
+                    comment="MASCULINO | FEMENINO | DESCONOCIDO. Se infiere de relaciones padre/madre o se asigna manualmente")
     foto_url = Column(Text, nullable=True,
                       comment="URL de Cloudinary (se integrará después)")
     notas = Column(Text, nullable=True,

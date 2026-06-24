@@ -35,6 +35,7 @@ def upgrade() -> None:
         sa.Column("apellido_paterno", sa.String(100), nullable=False),
         sa.Column("apellido_materno", sa.String(100), nullable=True),
         sa.Column("fecha_nacimiento", sa.Date(), nullable=True),
+        sa.Column("genero", sa.String(20), nullable=True),
         sa.Column("foto_url", sa.Text(), nullable=True),
         sa.Column("notas", sa.Text(), nullable=True),
         sa.Column("activo", sa.Boolean(), default=True),

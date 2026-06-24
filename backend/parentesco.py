@@ -1,26 +1,11 @@
 """
 parentesco.py — Motor de inferencia de parentescos via CTE Recursiva (PostgreSQL).
 
-ANTES: 15+ consultas SQL anidadas (una por tipo: abuelos, tios, sobrinos, etc.)
-AHORA: UNA unica CTE recursiva que recorre el grafo en ambas direcciones
-       y deduce TODOS los parentescos en 1-2 queries.
-
-ALGORITMO:
-  1. CTE base: recoge las relaciones directas (padre/madre/hermano/conyuge).
-  2. PASO RECURSIVO (subida): de hijo → padre → abuelo → bisabuelo...
-  3. PASO RECURSIVO (bajada): de padre → hijo → nieto → bisnieto...
-  4. DEDUCCION: cruza los caminos para inferir tios, primos, cuñados, etc.
-
-La CTE retorna filas con (persona_id, pariente_id, tipo_parentesco, pasos).
-La funcion Python traduce estos IDs a objetos Persona para la API.
-
-Ejemplo de consulta SQL generada:
-  WITH RECURSIVE arbol AS (
-    SELECT ... FROM relaciones WHERE persona_origen_id = :pid
-    UNION
-    SELECT ... FROM relaciones r JOIN arbol a ON ...
-  )
-  SELECT * FROM arbol;
+Version optimizada con:
+- CTE recursiva bidireccional con deteccion de ciclos (ARRAY path_ids).
+- Inferencia de tios, sobrinos, primos, cuñados mediante UNION de caminos.
+- Uso del campo genero de Persona (con fallback a inferencia por relaciones).
+- Una unica consulta CTE + una consulta IN para nombres.
 """
 
 from functools import lru_cache
@@ -33,90 +18,76 @@ from models import Persona
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CTE RECURSIVA PRINCIPAL
+# CTE RECURSIVA PRINCIPAL (con deteccion de ciclos)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-# Mapeo de tipos de relacion directa a su inversa
-_INVERSA = {"padre": "hijo", "madre": "hija", "hermano": "hermano",
-            "hermana": "hermana", "conyuge": "conyuge"}
-
 
 def _cte_parentesco_completo(db: Session, persona_id: int) -> List[Dict]:
     """
-    Ejecuta una CTE recursiva que recorre el arbol familiar.
-
-    La CTE tiene DOS brazos:
-      - ASCENDENTE: del individuo hacia padres/abuelos/bisabuelos
-      - DESCENDENTE: del individuo hacia hijos/nietos/bisnietos
-
-    Cada fila retorna:
-      pariente_id: ID de la persona encontrada
-      tipo_parentesco: etiqueta textual del vinculo
-      pasos: profundidad en el arbol (1=directo, 2=abuelo, etc.)
-
-    La CTE usa indices compuestos idx_relaciones_origen_destino
-    e idx_relaciones_destino_origen para eficiencia O(log n).
+    Ejecuta una CTE recursiva que recorre el grafo familiar en ambas direcciones.
+    Retorna lista de dicts con: pariente_id, tipo, pasos.
     """
     sql = text("""
     WITH RECURSIVE
-    -- 1. Relaciones directas del individuo
-    directas AS (
-        SELECT r.persona_origen_id AS a_id,
-               r.persona_destino_id AS b_id,
-               r.tipo_relacion
-        FROM relaciones r
-        WHERE r.persona_origen_id = :pid
-           OR r.persona_destino_id = :pid
-    ),
-    -- 2. Arbol ascendente: del individuo hacia ancestros
+    -- 1. Arbol ascendente (de la persona a sus ancestros)
     ascendente AS (
-        -- Base: padres directos
-        SELECT r.persona_origen_id AS ancestro_id,
-               r.persona_destino_id AS descendiente_id,
-               r.tipo_relacion,
-               1 AS profundidad
+        SELECT
+            r.persona_origen_id AS ancestro_id,
+            r.persona_destino_id AS descendiente_id,
+            r.tipo_relacion,
+            1 AS profundidad,
+            ARRAY[:pid] AS path_ids,
+            FALSE AS ciclo
         FROM relaciones r
         WHERE r.persona_destino_id = :pid
           AND r.tipo_relacion IN ('padre', 'madre')
 
         UNION ALL
 
-        -- Recursivo: abuelos, bisabuelos...
-        SELECT r.persona_origen_id,
-               r.persona_destino_id,
-               r.tipo_relacion,
-               a.profundidad + 1
+        SELECT
+            r.persona_origen_id,
+            r.persona_destino_id,
+            r.tipo_relacion,
+            a.profundidad + 1,
+            a.path_ids || a.ancestro_id,
+            (r.persona_origen_id = ANY(a.path_ids)) AS ciclo
         FROM relaciones r
         JOIN ascendente a ON r.persona_destino_id = a.ancestro_id
         WHERE r.tipo_relacion IN ('padre', 'madre')
+          AND NOT ciclo
+          AND NOT (r.persona_origen_id = ANY(a.path_ids))
     ),
-    -- 3. Arbol descendente: del individuo hacia descendientes
+    -- 2. Arbol descendente (de la persona a sus descendientes)
     descendente AS (
-        -- Base: hijos directos
-        SELECT r.persona_destino_id AS descendiente_id,
-               r.persona_origen_id AS ancestro_id,
-               r.tipo_relacion,
-               1 AS profundidad
+        SELECT
+            r.persona_destino_id AS descendiente_id,
+            r.persona_origen_id AS ancestro_id,
+            r.tipo_relacion,
+            1 AS profundidad,
+            ARRAY[:pid] AS path_ids,
+            FALSE AS ciclo
         FROM relaciones r
         WHERE r.persona_origen_id = :pid
           AND r.tipo_relacion IN ('padre', 'madre')
 
         UNION ALL
 
-        -- Recursivo: nietos, bisnietos...
-        SELECT r.persona_destino_id,
-               r.persona_origen_id,
-               r.tipo_relacion,
-               d.profundidad + 1
+        SELECT
+            r.persona_destino_id,
+            r.persona_origen_id,
+            r.tipo_relacion,
+            d.profundidad + 1,
+            d.path_ids || d.descendiente_id,
+            (r.persona_destino_id = ANY(d.path_ids)) AS ciclo
         FROM relaciones r
         JOIN descendente d ON r.persona_origen_id = d.descendiente_id
         WHERE r.tipo_relacion IN ('padre', 'madre')
+          AND NOT ciclo
+          AND NOT (r.persona_destino_id = ANY(d.path_ids))
     ),
-    -- 4. Hermanos: personas que comparten al menos un padre
+    -- 3. Hermanos (comparten al menos un padre)
     hermanos AS (
         SELECT DISTINCT
             r2.persona_destino_id AS hermano_id,
-            'hermano' AS tipo,
             1 AS prof
         FROM relaciones r1
         JOIN relaciones r2 ON r1.persona_origen_id = r2.persona_origen_id
@@ -125,22 +96,22 @@ def _cte_parentesco_completo(db: Session, persona_id: int) -> List[Dict]:
           AND r1.tipo_relacion IN ('padre', 'madre')
           AND r2.tipo_relacion IN ('padre', 'madre')
     ),
-    -- 5. Conyuges: relaciones directas de tipo conyuge
+    -- 4. Conyuges (relacion directa)
     conyuges AS (
-        SELECT CASE
-                 WHEN r.persona_origen_id = :pid THEN r.persona_destino_id
-                 ELSE r.persona_origen_id
-               END AS conyuge_id,
-               'conyuge' AS tipo,
-               1 AS prof
+        SELECT
+            CASE
+                WHEN r.persona_origen_id = :pid THEN r.persona_destino_id
+                ELSE r.persona_origen_id
+            END AS conyuge_id,
+            1 AS prof
         FROM relaciones r
         WHERE (r.persona_origen_id = :pid OR r.persona_destino_id = :pid)
           AND r.tipo_relacion = 'conyuge'
     ),
-    -- 6. UNION de todos los parientes directos
+    -- 5. Parientes directos
     parientes_directos AS (
-        SELECT :pid AS persona_id,
-               a.ancestro_id AS pariente_id,
+        -- Ascendentes
+        SELECT :pid AS persona_id, a.ancestro_id AS pariente_id,
                CASE
                  WHEN a.tipo_relacion = 'padre' AND a.profundidad = 1 THEN 'PADRE'
                  WHEN a.tipo_relacion = 'madre' AND a.profundidad = 1 THEN 'MADRE'
@@ -148,14 +119,11 @@ def _cte_parentesco_completo(db: Session, persona_id: int) -> List[Dict]:
                  WHEN a.tipo_relacion = 'madre' AND a.profundidad = 2 THEN 'ABUELA'
                  WHEN a.tipo_relacion = 'padre' AND a.profundidad >= 3 THEN 'BISABUELO'
                  WHEN a.tipo_relacion = 'madre' AND a.profundidad >= 3 THEN 'BISABUELA'
-               END AS tipo,
-               a.profundidad AS pasos
-        FROM ascendente a
-
+               END AS tipo, a.profundidad AS pasos
+        FROM ascendente a WHERE NOT a.ciclo
         UNION ALL
-
-        SELECT :pid,
-               d.descendiente_id,
+        -- Descendentes
+        SELECT :pid, d.descendiente_id,
                CASE
                  WHEN d.tipo_relacion = 'padre' AND d.profundidad = 1 THEN 'HIJO'
                  WHEN d.tipo_relacion = 'madre' AND d.profundidad = 1 THEN 'HIJA'
@@ -163,145 +131,120 @@ def _cte_parentesco_completo(db: Session, persona_id: int) -> List[Dict]:
                  WHEN d.tipo_relacion = 'madre' AND d.profundidad = 2 THEN 'NIETA'
                  WHEN d.tipo_relacion = 'padre' AND d.profundidad >= 3 THEN 'BISNIETO'
                  WHEN d.tipo_relacion = 'madre' AND d.profundidad >= 3 THEN 'BISNIETA'
-               END AS tipo,
-               d.profundidad
-        FROM descendente d
-
+               END AS tipo, d.profundidad
+        FROM descendente d WHERE NOT d.ciclo
         UNION ALL
-
-        SELECT :pid, h.hermano_id, CASE WHEN h.tipo = 'hermano'
-          THEN (SELECT CASE WHEN p.genero = 'MASCULINO' THEN 'HERMANO' ELSE 'HERMANA' END
-                FROM (VALUES('MASCULINO')) AS p(genero)
-                WHERE EXISTS (SELECT 1 FROM personas WHERE id = h.hermano_id))
-          ELSE 'HERMANO' END, 1
-        FROM hermanos h
-
+        -- Hermanos
+        SELECT :pid, h.hermano_id, 'HERMANO' AS tipo, 1 FROM hermanos h
         UNION ALL
-
-        SELECT :pid, c.conyuge_id, 'CONYUGE', 1
-        FROM conyuges c
+        -- Conyuges
+        SELECT :pid, c.conyuge_id, 'CONYUGE' AS tipo, 1 FROM conyuges c
     ),
-    -- 7. DEDUCCION de parentescos compuestos:
-    --    Tios: hermanos de los padres
+    -- 6. Inferencia de parentescos compuestos
     tios AS (
-        SELECT DISTINCT :pid AS persona_id,
-               h.hermano_id AS pariente_id,
-               'TIO' AS tipo,
-               2 AS pasos
+        SELECT DISTINCT :pid AS persona_id, h.hermano_id AS pariente_id,
+               'TIO' AS tipo, 2 AS pasos
         FROM ascendente a
-        JOIN hermanos h ON a.ancestro_id IN (
-            SELECT r.persona_destino_id
-            FROM relaciones r
-            WHERE r.persona_origen_id IN (
-                SELECT r2.persona_origen_id
-                FROM relaciones r2
-                WHERE r2.persona_destino_id = h.hermano_id
-                  AND r2.tipo_relacion IN ('padre', 'madre')
-            )
-        )
+        JOIN hermanos h ON h.hermano_id != a.ancestro_id
         WHERE a.profundidad = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM relaciones r
+              WHERE r.persona_origen_id = h.hermano_id
+                AND r.persona_destino_id = a.ancestro_id
+                AND r.tipo_relacion IN ('padre', 'madre')
+          )
     ),
-    --    Sobrinos: hijos de los hermanos
     sobrinos AS (
-        SELECT DISTINCT :pid AS persona_id,
-               r.persona_destino_id AS pariente_id,
-               'SOBRINO' AS tipo,
-               2 AS pasos
+        SELECT DISTINCT :pid AS persona_id, r.persona_destino_id AS pariente_id,
+               'SOBRINO' AS tipo, 2 AS pasos
         FROM hermanos h
         JOIN relaciones r ON r.persona_origen_id = h.hermano_id
-        WHERE r.tipo_relacion IN ('padre', 'madre')
+        WHERE r.tipo_relacion IN ('padre', 'madre') AND r.persona_destino_id != :pid
     ),
-    --    Cuniados: conyuges de hermanos, y hermanos del conyuge
     cuniados AS (
         SELECT DISTINCT :pid AS persona_id,
-               c.conyuge_id AS pariente_id,
-               'CUNIADO' AS tipo,
-               2 AS pasos
+               CASE WHEN c.conyuge_id = h.hermano_id THEN c.conyuge_id ELSE h.hermano_id END AS pariente_id,
+               'CUNIADO' AS tipo, 2 AS pasos
         FROM hermanos h
         JOIN conyuges c ON c.conyuge_id != :pid
-                       AND c.conyuge_id != h.hermano_id
         WHERE h.hermano_id = c.conyuge_id
     ),
-    --    Primos: hijos de los tios (hermanos de los padres)
     primos AS (
-        SELECT DISTINCT :pid AS persona_id,
-               r.persona_destino_id AS pariente_id,
-               'PRIMO' AS tipo,
-               3 AS pasos
+        SELECT DISTINCT :pid AS persona_id, r.persona_destino_id AS pariente_id,
+               'PRIMO' AS tipo, 3 AS pasos
         FROM ascendente a
         JOIN hermanos h ON h.hermano_id != a.ancestro_id
         JOIN relaciones r ON r.persona_origen_id = h.hermano_id
-        WHERE a.profundidad = 1
-          AND r.tipo_relacion IN ('padre', 'madre')
+        WHERE a.profundidad = 1 AND r.tipo_relacion IN ('padre', 'madre')
+          AND r.persona_destino_id != :pid
     )
-    -- 8. RESULTADO FINAL: todos los parientes unicos
+    -- 7. RESULTADO FINAL
     SELECT DISTINCT ON (pariente_id) pariente_id, tipo, pasos
     FROM (
-        SELECT * FROM parientes_directos
-        UNION ALL
-        SELECT * FROM tios
-        UNION ALL
-        SELECT * FROM sobrinos
-        UNION ALL
-        SELECT * FROM cuniados
-        UNION ALL
+        SELECT * FROM parientes_directos UNION ALL
+        SELECT * FROM tios UNION ALL
+        SELECT * FROM sobrinos UNION ALL
+        SELECT * FROM cuniados UNION ALL
         SELECT * FROM primos
     ) todos
-    WHERE pariente_id != :pid
+    WHERE pariente_id != :pid AND tipo IS NOT NULL
     ORDER BY pariente_id, pasos ASC;
     """)
 
     rows = db.execute(sql, {"pid": persona_id}).fetchall()
-    return [{"pariente_id": r[0], "tipo": r[1], "pasos": r[2]} for r in rows]
+    return [{"pariente_id": row[0], "tipo": row[1], "pasos": row[2]} for row in rows]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INFERENCIA DE GENERO (fallback cuando Persona.genero es NULL)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _inferir_genero(db: Session, persona_id: int) -> str:
+    """Infers genero desde relaciones padre/madre."""
+    row = db.execute(
+        text("SELECT tipo_relacion FROM relaciones WHERE persona_origen_id = :pid "
+             "AND tipo_relacion IN ('padre','madre') LIMIT 1"),
+        {"pid": persona_id}
+    ).first()
+    if row:
+        return "MASCULINO" if row[0] == "padre" else "FEMENINO"
+    return "DESCONOCIDO"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAPEO DE TIPO A TEXTO SEGUN GENERO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_TIPO_MAPA = {
+    "PADRE": ("padre", "madre"),
+    "ABUELO": ("abuelo", "abuela"),
+    "BISABUELO": ("bisabuelo", "bisabuela"),
+    "HIJO": ("hijo", "hija"),
+    "NIETO": ("nieto", "nieta"),
+    "BISNIETO": ("bisnieto", "bisnieta"),
+    "HERMANO": ("hermano", "hermana"),
+    "TIO": ("tio", "tia"),
+    "SOBRINO": ("sobrino", "sobrina"),
+    "CUNIADO": ("cunado", "cunada"),
+    "PRIMO": ("primo", "prima"),
+    "CONYUGE": ("conyuge", "conyuge"),
+}
+
+
+def _parentesco_a_texto(tipo_base: str, genero: str) -> str:
+    masc, fem = _TIPO_MAPA.get(tipo_base, (tipo_base.lower(), tipo_base.lower()))
+    return masc if genero.upper() == "MASCULINO" else fem
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FUNCION PRINCIPAL (con cache)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_RESULTADO_CACHE: Dict[int, Tuple[List[Dict], List[Dict]]] = {}
-_CACHE_TTL = 300  # 5 minutos
-
-
-def _genero(db: Session, persona_id: int) -> str:
-    """Determina genero de una persona por su tipo de relacion como padre/madre."""
-    row = db.execute(
-        text("SELECT tipo_relacion FROM relaciones WHERE persona_origen_id = :pid "
-             "AND tipo_relacion IN ('padre','madre') LIMIT 1"),
-        {"pid": persona_id}
-    ).first()
-    if row and row[0] == "padre":
-        return "MASCULINO"
-    return "FEMENINO" if (row and row[0] == "madre") else "DESCONOCIDO"
-
-
-def _parentesco_a_texto(tipo: str, genero: str) -> str:
-    """Convierte tipo base a texto legible segun genero."""
-    mapa = {
-        "PADRE": ("padre", "madre"),
-        "ABUELO": ("abuelo", "abuela"),
-        "BISABUELO": ("bisabuelo", "bisabuela"),
-        "HIJO": ("hijo", "hija"),
-        "NIETO": ("nieto", "nieta"),
-        "BISNIETO": ("bisnieto", "bisnieta"),
-        "HERMANO": ("hermano", "hermana"),
-        "TIO": ("tio", "tia"),
-        "SOBRINO": ("sobrino", "sobrina"),
-        "CUNIADO": ("cunado", "cunada"),
-        "PRIMO": ("primo", "prima"),
-        "CONYUGE": ("conyuge", "conyuge"),
-    }
-    masc, fem = mapa.get(tipo, (tipo.lower(), tipo.lower()))
-    return masc if genero == "MASCULINO" else fem
-
-
-@lru_cache(maxsize=128)
-def _cte_cached(db_id: int, persona_id: int) -> Tuple[Tuple, ...]:
+@lru_cache(maxsize=256)
+def _cte_cached(persona_id: int) -> Tuple[Tuple[int, str, int], ...]:
     """
-    Version cacheable de la CTE.
-    db_id es un hash del id de sesion (para invalidar por sesion).
+    Version cacheada de la CTE (invalida al reiniciar la app).
     """
-    # No podemos cachear objetos db, asi que creamos una sesion nueva
     from database import SessionLocal
     session = SessionLocal()
     try:
@@ -316,80 +259,78 @@ def _cte_cached(db_id: int, persona_id: int) -> Tuple[Tuple, ...]:
 def calcular_parentesco(db: Session, dni: str) -> List[Dict]:
     """
     Punto de entrada principal.
-    Retorna lista de dicts: {dni, apellidos, nombres, tipo_parentesco}.
-
-    Uso:
-      resultados = calcular_parentesco(db, "47435679")
-      for r in resultados:
-          print(r["tipo_parentesco"], "-", r["nombres"])
+    Retorna lista de dicts con: dni, apellidos, nombres, tipo_parentesco, pasos.
     """
     persona = db.query(Persona).filter(Persona.dni == dni, Persona.activo == True).first()
     if not persona:
         return []
 
-    # Obtener resultados via CTE
-    resultados_cte = _cte_parentesco_completo(db, persona.id)
+    resultados_cte = _cte_cached(persona.id)
+    if not resultados_cte:
+        return []
 
-    # Convertir a formato API
+    # Obtener personas en una sola consulta IN
+    ids_parientes = [r[0] for r in resultados_cte]
+    parientes = db.query(Persona).filter(
+        Persona.id.in_(ids_parientes), Persona.activo == True
+    ).all()
+    parientes_dict = {p.id: p for p in parientes}
+
+    # Cache de genero para no consultar repetidamente
+    genero_cache: Dict[int, str] = {}
+
     salida = []
-    for r in resultados_cte:
-        pariente = db.query(Persona).filter(
-            Persona.id == r["pariente_id"], Persona.activo == True
-        ).first()
+    for pariente_id, tipo_base, pasos in resultados_cte:
+        pariente = parientes_dict.get(pariente_id)
         if not pariente:
             continue
 
-        gen = _genero(db, pariente.id)
-        tipo_texto = _parentesco_a_texto(r["tipo"], gen)
+        # Genero: del campo o inferido
+        gen = pariente.genero
+        if not gen:
+            if pariente_id not in genero_cache:
+                genero_cache[pariente_id] = _inferir_genero(db, pariente_id)
+            gen = genero_cache[pariente_id]
 
         salida.append({
             "dni": pariente.dni,
             "apellidos": f"{pariente.apellido_paterno} {pariente.apellido_materno or ''}".strip(),
             "nombres": pariente.nombres,
-            "tipo_parentesco": tipo_texto,
-            "pasos": r["pasos"],
+            "tipo_parentesco": _parentesco_a_texto(tipo_base, gen),
+            "pasos": pasos,
         })
 
     return salida
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# API COMPATIBLE (mantiene firma con las funciones anteriores)
+# API COMPATIBLE (firmas esperadas por main.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def inferir_todos_parentescos(db: Session, persona: Persona) -> List[Dict]:
-    """
-    Version compatible con la API anterior.
-    Retorna lista de dicts con keys: tipo_parentesco, persona (objeto), camino.
-    """
+    """Version compatible con API anterior: retorna tipo_parentesco, persona, camino."""
     resultados = calcular_parentesco(db, persona.dni)
     salida = []
     for r in resultados:
         p = db.query(Persona).filter(Persona.dni == r["dni"]).first()
-        if not p:
-            continue
-        salida.append({
-            "tipo_parentesco": r["tipo_parentesco"],
-            "persona": p,
-            "camino": f"Inferido por CTE ({r['tipo_parentesco']}, {r['pasos']} pasos)",
-        })
+        if p:
+            salida.append({
+                "tipo_parentesco": r["tipo_parentesco"],
+                "persona": p,
+                "camino": f"CTE ({r['tipo_parentesco']}, {r['pasos']} pasos)",
+            })
     return salida
 
 
-def inferir_parentesco_especifico(
-    db: Session, persona: Persona, tipo: str
-) -> List[Dict]:
-    """
-    Version compatible: filtra por tipo especifico.
-    tipo puede ser: padre, madre, abuelo, abuela, hijo, hija, etc.
-    """
+def inferir_parentesco_especifico(db: Session, persona: Persona, tipo: str) -> List[Dict]:
+    """Filtra por tipo especifico."""
     todos = inferir_todos_parentescos(db, persona)
     tipo_lower = tipo.lower().strip()
     return [r for r in todos if r["tipo_parentesco"] == tipo_lower]
 
 
 def _obtener_conyuges(db: Session, persona_id: int) -> List[Persona]:
-    """Helper: obtiene los conyuges de una persona (para compatibilidad)."""
+    """Helper: obtiene conyuges."""
     conyuges = []
     rows = db.execute(
         text("""
