@@ -542,6 +542,53 @@
     <!-- ═══ TOAST ═══ -->
     <div id="toast" class="toast hidden"></div>
 
+    <script>
+    // ─── Login handler inline (no depende de JS externo) ───
+    (function() {
+        var token = new URLSearchParams(window.location.search).get("token");
+        var error = new URLSearchParams(window.location.search).get("error");
+        if (token) {
+            sessionStorage.setItem("rc_token", token);
+            var u = new URLSearchParams(window.location.search).get("user");
+            var r = new URLSearchParams(window.location.search).get("rol");
+            if (u) sessionStorage.setItem("rc_user", u);
+            if (r) sessionStorage.setItem("rc_rol", r);
+            window.history.replaceState({}, "", "/");
+            document.getElementById("login-overlay").classList.add("hidden");
+        }
+        if (error) {
+            alert("Usuario o contraseña incorrectos");
+            window.history.replaceState({}, "", "/");
+        }
+        document.getElementById("form-login").addEventListener("submit", async function(e) {
+            e.preventDefault();
+            var u = document.getElementById("login-user").value.trim();
+            var p = document.getElementById("login-pass").value.trim();
+            if (!u || !p) return;
+            var btn = document.querySelector("#form-login button");
+            btn.disabled = true; btn.textContent = "Ingresando...";
+            try {
+                var r = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({username: u, password: p})
+                });
+                if (!r.ok) { var ed = await r.json(); throw new Error(ed.detail || "Error"); }
+                var d = await r.json();
+                sessionStorage.setItem("rc_token", d.access_token);
+                sessionStorage.setItem("rc_user", d.username);
+                sessionStorage.setItem("rc_rol", d.rol);
+                document.getElementById("login-overlay").classList.add("hidden");
+                setTimeout(function(){
+                    fetch("/api/health", {headers:{Authorization:"Bearer "+d.access_token}})
+                    .then(function(){console.log("✅ RedCorruptela API v0.3");})
+                    .catch(function(err){console.warn("⚠",err.message);});
+                }, 100);
+            } catch (err) { console.error("[Login]", err); alert(err.message); }
+            btn.disabled = false; btn.textContent = "Ingresar";
+        });
+    })();
+    </script>
     <script src="/static/js/state.js"></script>
     <script src="/static/js/api.js"></script>
     <script src="/static/js/ui.js"></script>
