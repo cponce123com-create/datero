@@ -26,53 +26,23 @@
             </form>
             <script>
 console.log("[BLOCK0] Login script executing");
-// ─── Login handler inline (ejecuta INMEDIATAMENTE) ───
-
-            // ─── Login handler inline (ejecuta INMEDIATAMENTE) ───
-            (function(){
-                var q = new URLSearchParams(window.location.search);
-                var t = q.get("token"), u = q.get("user"), r = q.get("rol"), e = q.get("error");
-                if (t) {
-                    sessionStorage.setItem("rc_token",t);
-                    if (u) sessionStorage.setItem("rc_user",u);
-                    if (r) sessionStorage.setItem("rc_rol",r);
-                    window.history.replaceState({},"","/");
-                    var o = document.getElementById("login-overlay");
-                    if (o) o.classList.add("hidden");
-                }
-                if (e) {
-                    alert("Usuario o contraseña incorrectos");
-                    window.history.replaceState({},"","/");
-                }
-                var f = document.getElementById("form-login");
-                if (f) f.addEventListener("submit", function(ev){
-                    ev.preventDefault();
-                    var u = document.getElementById("login-user"), p = document.getElementById("login-pass");
-                    if (!u || !p || !u.value.trim() || !p.value.trim()) return;
-                    var btn = document.querySelector("#form-login button");
-                    btn.disabled = true; btn.textContent = "Ingresando...";
-                    fetch("/api/auth/login", {
-                        method:"POST", headers:{"Content-Type":"application/json"},
-                        body:JSON.stringify({username:u.value.trim(), password:p.value.trim()})
-                    }).then(function(r){
-                        if (!r.ok) return r.json().then(function(d){throw new Error(d.detail||"Error")});
-                        return r.json();
-                    }).then(function(d){
-                        sessionStorage.setItem("rc_token",d.access_token);
-                        sessionStorage.setItem("rc_user",d.username);
-                        sessionStorage.setItem("rc_rol",d.rol);
-                        document.getElementById("login-overlay").classList.add("hidden");
-                        fetch("/api/health",{headers:{Authorization:"Bearer "+d.access_token}})
-                        .then(function(){console.log("OK")}).catch(function(){});
-                    }).catch(function(err){
-                        console.error("[Login]",err);
-                        alert(err.message);
-                        btn.disabled = false; btn.textContent = "Ingresar";
-                    });
-                });
-            })();
-            </script>
-<script src="/static/js/test.js"></script>
+(function(){
+    var q = new URLSearchParams(window.location.search);
+    var t = q.get("token"), u = q.get("user"), r = q.get("rol"), e = q.get("error");
+    if (t) {
+        sessionStorage.setItem("rc_token", t);
+        if (u) sessionStorage.setItem("rc_user", u);
+        if (r) sessionStorage.setItem("rc_rol", r);
+        window.history.replaceState({}, "", "/");
+        var o = document.getElementById("login-overlay");
+        if (o) o.classList.add("hidden");
+    }
+    if (e) {
+        alert("Usuario o contraseña incorrectos");
+        window.history.replaceState({}, "", "/");
+    }
+})();
+</script>
         </div>
     </div>
 
@@ -119,7 +89,6 @@ console.log("[BLOCK0] Login script executing");
 
     <!-- ═══ CONTENIDO PRINCIPAL ═══ -->
     <main id="main-content" class="main-content">
-<script>console.log("MARKER: main-content");</script>
 
         <!-- Estado inicial -->
         <div id="empty-state" class="empty-state">
@@ -152,7 +121,6 @@ console.log("[BLOCK0] Login script executing");
 
     <!-- ═══ MODAL: NUEVA PERSONA ═══ -->
     <div id="modal-persona" class="modal hidden">
-<script>console.log("MARKER: after-modal-persona");</script>
 
         <div class="modal-overlay"></div>
         <div class="modal-content">
@@ -208,7 +176,6 @@ console.log("[BLOCK0] Login script executing");
 
     <!-- ═══ MODAL: NUEVA EMPRESA ═══ -->
     <div id="modal-empresa" class="modal hidden">
-<script>console.log("MARKER: after-modal-empresa");</script>
 
         <div class="modal-overlay"></div>
         <div class="modal-content">
@@ -246,7 +213,6 @@ console.log("[BLOCK0] Login script executing");
 
     <!-- ═══ MODAL: NUEVA RELACIÓN ═══ -->
     <div id="modal-relacion" class="modal hidden">
-<script>console.log("MARKER: after-modal-relacion");</script>
 
         <div class="modal-overlay"></div>
         <div class="modal-content">
@@ -450,7 +416,6 @@ console.log("[BLOCK0] Login script executing");
 
     <!-- ═══ MODAL: IMPORTAR CSV ═══ -->
     <div id="modal-importar" class="modal hidden">
-<script>console.log("MARKER: after-modal-importar");</script>
 
         <div class="modal-overlay"></div>
         <div class="modal-content">
@@ -601,10 +566,10 @@ console.log("[BLOCK0] Login script executing");
     <!-- ═══ TOAST ═══ -->
     <div id="toast" class="toast hidden"></div>
 
-    
-<script>console.log("
-<script>console.log("BOTTOM_SCRIPT_EXECUTED");</script>
-
-
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/static/js/state.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/ui.js"></script>
+<script src="/static/js/app.js"></script>
 </body>
 </html>
