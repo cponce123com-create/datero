@@ -318,29 +318,20 @@ window.sl = function() {
     if (w) w.style.display = "none";
 };
 
-/* ─── KPI Loader ─── */
+/* ─── KPI Loader (uses individual endpoints, avoids /api/stats 500) ─── */
 async function cargarKPIs() {
     try {
-        var s = await af(A + "/stats");
-        if (!s) return;
-        var ids = {personas:"kpi-personas", empresas:"kpi-empresas", relaciones:"kpi-relaciones", etiquetas:"kpi-etiquetas"};
-        var map = {
-            "total_personas": "personas", "total_empresas": "empresas",
-            "total_relaciones": "relaciones", "total_persona_empresa": "etiquetas"
-        };
-        for (var k in map) {
-            var v = s[k];
-            if (v !== undefined) {
-                var el = document.getElementById(ids[map[k]]);
-                if (el) el.textContent = v;
-            }
-        }
-        // Also try total_etiquetas directly
-        if (s.total_etiquetas !== undefined) {
-            var el = document.getElementById("kpi-etiquetas");
-            if (el) el.textContent = s.total_etiquetas;
-        }
-    } catch(e) { console.warn("KPI error:", e); }
+        var [p, e, r, et] = await Promise.all([
+            af(A + "/personas?limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return "—"; }),
+            af(A + "/empresas?q=a&limite=1").then(function(d){ return d.total || 0; }).catch(function(){ return "—"; }),
+            af(A + "/relaciones/0").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
+            af(A + "/etiquetas").then(function(d){ return Array.isArray(d) ? d.length : 0; }).catch(function(){ return "—"; }),
+        ]);
+        var el1 = document.getElementById("kpi-personas"); if (el1) el1.textContent = p;
+        var el2 = document.getElementById("kpi-empresas"); if (el2) el2.textContent = e;
+        var el3 = document.getElementById("kpi-relaciones"); if (el3) el3.textContent = r;
+        var el4 = document.getElementById("kpi-etiquetas"); if (el4) el4.textContent = et;
+    } catch(ex) { console.warn("KPI error:", ex); }
 }
 
 /* ─── Re-export functions that ui.js calls ─── */
