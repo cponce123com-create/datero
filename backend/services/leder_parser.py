@@ -30,11 +30,16 @@ class LederResult:
 
 
 def _strip_html(t):
+    # Convertir <br>, <br/>, <br />, </p>, </div>, </tr> a newlines ANTES de quitar tags
+    t = re.sub(r'<br\s*/?>', '\n', t, flags=re.IGNORECASE)
+    t = re.sub(r'</(?:p|div|tr|li|h[1-6]|blockquote|pre)>', '\n', t, flags=re.IGNORECASE)
     t = re.sub(r'<[^>]+>', '', t)
     for e, c in [("&amp;","&"),("&lt;","<"),("&gt;",">"),("&nbsp;"," "),
                  ("&#10;","\n"),("&#13;",""),("&#39;","'"),("&quot;","'")]:
         t = t.replace(e, c)
     t = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), t)
+    # Normalizar multiples newlines seguidos
+    t = re.sub(r'\n{3,}', '\n\n', t)
     return t
 
 
