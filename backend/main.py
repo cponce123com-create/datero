@@ -537,6 +537,11 @@ def api_enriquecer_empresa(ruc: str, db: Session = Depends(get_db), user: Usuari
     empresa.comprobantes_autorizados = data.get("comprobantes_autorizados") or empresa.comprobantes_autorizados
     empresa.sistema_emision = data.get("sistema_emision") or empresa.sistema_emision
     empresa.afiliado_ple = data.get("afiliado_ple") or empresa.afiliado_ple
+    empresa.sistema_emision_electronica = data.get("sistema_emision_electronica") or empresa.sistema_emision_electronica
+    empresa.emisor_electronico_desde = data.get("emisor_electronico_desde") or empresa.emisor_electronico_desde
+    empresa.comprobantes_electronicos = data.get("comprobantes_electronicos") or empresa.comprobantes_electronicos
+    empresa.padrones = data.get("padrones") or empresa.padrones
+    empresa.establecimientos = data.get("establecimientos") or empresa.establecimientos
 
     if data.get("representante_legal"):
         empresa.representante_legal_dni = data["representante_legal"].get("dni") or empresa.representante_legal_dni
@@ -589,15 +594,14 @@ def _ejecutar_enriquecimiento(user_id: int, user_username: str):
 
             _progreso_enriquecer["ruc_actual"] = emp.ruc
             try:
-                # Intentar apiperu.dev primero (funciona, requiere token)
+                # Intentar scraper directo SUNAT primero (gratuito)
                 try:
-                    api = ConsultaPeru()
-                    data = api.consultar_ruc(emp.ruc)
-                    data["representante_legal"] = None
-                except Exception:
-                    # Fallback: scraper directo SUNAT
                     scraper = SunatScraper()
                     data = scraper.consultar_ruc(emp.ruc)
+                except Exception:
+                    # Fallback: apiperu.dev
+                    api = ConsultaPeru()
+                    data = api.consultar_ruc(emp.ruc)
                 if data.get("nombre_o_razon_social"):
                     emp.nombre = data["nombre_o_razon_social"]
                 if data.get("direccion"):
@@ -605,7 +609,9 @@ def _ejecutar_enriquecimiento(user_id: int, user_username: str):
                 for campo in ["estado", "condicion", "tipo_contribuyente", "nombre_comercial",
                               "fecha_inscripcion", "fecha_inicio_actividades", "sistema_contabilidad",
                               "actividad_comercio_exterior", "actividad_economica",
-                              "comprobantes_autorizados", "sistema_emision", "afiliado_ple"]:
+                              "comprobantes_autorizados", "sistema_emision", "afiliado_ple",
+                              "sistema_emision_electronica", "emisor_electronico_desde",
+                              "comprobantes_electronicos", "padrones", "establecimientos"]:
                     val = data.get(campo)
                     if val:
                         setattr(emp, campo, val)
