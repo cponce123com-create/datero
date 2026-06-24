@@ -13,6 +13,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, status, Body, Reques
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -927,6 +928,48 @@ def api_consultar_ruc(ruc: str = Query(..., min_length=11, max_length=11), user:
             status_code=502,
             detail=f"SUNAT bloqueo la consulta (CAPTCHA) y el servicio alternativo tampoco esta disponible: {e2}"
         )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEARCH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/search")
+def api_search(q: str = Query(..., min_length=2), db: Session = Depends(get_db), user: Usuario = Depends(get_current_user)):
+    """Busqueda predictiva: personas + empresas en un solo endpoint."""
+    patron = f"%{q}%"
+    personas = db.query(Persona).filter(
+        Persona.activo == True,
+        or_(
+            Persona.nombres.ilike(patron),
+            Persona.apellido_paterno.ilike(patron),
+            Persona.apellido_materno.ilike(patron),
+            Persona.dni.ilike(patron),
+        )
+    ).limit(10).all()
+
+    empresas = db.query(Empresa).filter(
+        Empresa.activo == True,
+        or_(
+            Empresa.nombre.ilike(patron),
+            Empresa.ruc.ilike(patron),
+        )
+    ).limit(10).all()
+
+    results = []
+    for p in personas:
+        results.append({
+            "id": p.id, "nombres": p.nombres,
+            "apellido_paterno": p.apellido_paterno or "",
+            "dni": p.dni, "tipo": "persona"
+        })
+    for e in empresas:
+        results.append({
+            "id": e.id, "nombres": e.nombre,
+            "apellido_paterno": "",
+            "dni": e.ruc, "tipo": "empresa"
+        })
+    return results[:10]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
