@@ -69,11 +69,13 @@ def _persona(db, dni, nom=None, ap=None, am=None):
 
 
 def _rel(db, o, d, t, notas=None):
+    op = _persona(db, o)
+    dp = _persona(db, d)
     exist = db.query(Relacion).filter(
-        Relacion.persona_origen_dni == o, Relacion.persona_destino_dni == d,
+        Relacion.persona_origen_id == op.id, Relacion.persona_destino_id == dp.id,
         Relacion.tipo_relacion == t).first()
     if not exist:
-        db.add(Relacion(persona_origen_dni=o, persona_destino_dni=d,
+        db.add(Relacion(persona_origen_id=op.id, persona_destino_id=dp.id,
                         tipo_relacion=t, certeza="confirmado", notas=notas))
         return True
     return False
@@ -186,7 +188,7 @@ def procesar_empresas(db, texto):
             if not v:
                 db.add(PersonaEmpresa(persona_id=p.id, empresa_id=emp.id,
                                       cargo=cargo or "trabajador",
-                                      notas="Desde: " + desde if desde else None))
+                                      observacion="Desde: " + desde if desde else None))
                 rucs.append(ruc)
         else:
             rucs.append(ruc)
