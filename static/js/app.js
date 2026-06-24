@@ -74,12 +74,14 @@ async function drawGraph() {
         try {
             personas = await af(A + "/db/todas");
         } catch(e) { personas = []; }
+        var container = document.getElementById("network-graph");
         if (!personas || !personas.length) {
-            document.getElementById("network-graph").innerHTML = '<p style="text-align:center;padding:40px;color:var(--color-text-secondary);">Agrega personas para ver el grafo. <button class="btn btn-primary btn-sm" onclick="showFamilyTree()" style="margin-left:8px;">Probar arbol familiar</button></p>';
+            if (container) container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:0.9rem;"><i class="fas fa-database" style="margin-right:8px;"></i>Sin datos aun. Importa o registra personas para ver el grafo.</div>';
             return;
         }
-        // version friendly: mostrar boton para arbol familiar
-        document.getElementById("network-graph").innerHTML = '<p style="text-align:center;padding:20px;color:var(--color-text-secondary);">Selecciona una persona y haz clic en "Arbol familiar" en su ficha.</p>';
+        // Show simple count message - graph will show familia relationships per person
+        var total = personas.length;
+        if (container) container.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text);gap:8px;"><div style="font-size:2.5rem;font-weight:800;color:var(--primary);">' + total + '</div><div style="color:var(--muted);font-size:0.9rem;">personas registradas</div><div style="color:var(--muted);font-size:0.78rem;margin-top:4px;">Usa la barra de busqueda o ve a Personas/Empresas para explorar</div></div>';
     } catch(err) { console.warn("Graph error:", err); }
 }
 
@@ -282,6 +284,19 @@ document.addEventListener("DOMContentLoaded", function(){
             // Load dynamic content if needed
             if (view === "etiquetas") cargarListaEtiquetas();
             if (view === "dashboard") cargarDashboard();
+            // Auto-search on Personas/Empresas
+            if (view === "personas") {
+                setTimeout(function(){
+                    var si = document.getElementById("search-input");
+                    if (si && !si.value.trim()) { si.value = "a"; document.getElementById("search-btn").click(); si.value = ""; }
+                }, 200);
+            }
+            if (view === "empresas") {
+                setTimeout(function(){
+                    var esi = document.getElementById("search-empresa-input");
+                    if (esi && !esi.value.trim()) { esi.value = "a"; document.getElementById("search-empresa-btn").click(); esi.value = ""; }
+                }, 200);
+            }
         });
     });
 
