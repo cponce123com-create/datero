@@ -717,7 +717,7 @@ var IMP_HINTS = {
     sunat_macro: "Pegue los datos extraídos con la macro SUNAT (formato tabulado de 21 columnas). Soporta RUC 10 (persona natural + empresa + vínculo), RUC 20/30 (empresa jurídica) y representantes legales.",
     leder_individual: "Pegue el reporte individual de LEDER DATA (bloques DNI/NOMBRES/APELLIDOS/...).",
     leder_telegram: "Pegue o arrastra el texto exportado de Telegram con las respuestas del bot @LEDER_DATA_BOT. Se detecta automáticamente META, FAMILIA, EMPRESAS, SUNAT y datos complementarios.",
-    transparencia: "Datos de ordenes de compra/servicio (OC/OS) del portal de transparencia, pegados desde Excel. 12 columnas tabuladas: N°, Tipo de Orden, Número de orden, Tipo de Contratación, Descripción, Nro. Exp. SIAF, Fecha de Emisión, Fecha de Compromiso, Estado, Monto, RUC, Denominación. Las filas con Estado 'Anulada' se omiten automaticamente.",
+    transparencia: "Datos de ordenes de compra/servicio (OC/OS) del portal de transparencia. Puedes pegar los datos manualmente o arrastrar archivos .xlsx directamente. 12 columnas tabuladas: N°, Tipo de Orden, Número de orden, Tipo de Contratación, Descripción, Nro. Exp. SIAF, Fecha de Emisión, Fecha de Compromiso, Estado, Monto, RUC, Denominación. Las filas con Estado 'Anulada' se omiten automaticamente.",
 };
 var IMP_PLACEHOLDERS = {
     auto: "Pegue aquí los datos a importar (cualquier formato soportado)...",
@@ -732,11 +732,19 @@ var IMP_PLACEHOLDERS = {
 function impActualizarVista() {
     var formato = document.getElementById("imp-formato").value;
     document.getElementById("imp-hint").textContent = IMP_HINTS[formato] || "";
+    var dropzoneVisible = (formato === "leder_telegram" || formato === "transparencia");
+    document.getElementById("imp-dropzone-wrap").classList.toggle("hidden", !dropzoneVisible);
     document.getElementById("imp-hint-list").classList.toggle("hidden", formato !== "leder_telegram");
-    document.getElementById("imp-dropzone-wrap").classList.toggle("hidden", formato !== "leder_telegram");
     document.getElementById("imp-etiqueta-wrap").classList.toggle("hidden", formato === "leder_telegram");
     document.getElementById("btn-imp-debug").classList.toggle("hidden", formato !== "leder_telegram");
     document.getElementById("imp-textarea").placeholder = IMP_PLACEHOLDERS[formato] || "";
+    // Actualizar hint del dropzone segun formato
+    var dzText = document.querySelector("#imp-dropzone div:last-child");
+    if (formato === "transparencia" && dzText) {
+        dzText.textContent = "o haz clic para seleccionar (.xlsx)";
+    } else if (dzText) {
+        dzText.textContent = "o haz clic para seleccionar";
+    }
 }
 
 document.getElementById("imp-formato").addEventListener("change", impActualizarVista);
@@ -808,7 +816,115 @@ document.getElementById("form-importar").addEventListener("submit", async functi
     btn.disabled = false; btn.textContent = "Importar";
 });
 
-/* ─── LEDER: helpers de debug y drag&drop de archivos (usados solo cuando formato = leder_telegram) ─── */
+/* ─── Dropzone: click y drag&drop (funciona para leder_telegram y transparencia) ─── */
+document.getElementById("imp-dropzone").addEventListener("click", function() {
+    document.getElementById("imp-file-input").click();
+});
+document.getElementById("imp-file-input").addEventListener("change", function(e) {
+    if (e.target.files.length > 0) procesarArchivosImport(e.target.files);
+    e.target.value = "";
+});
+document.getElementById("imp-dropzone").addEventListener("dragover", function(e) {
+    e.preventDefault();
+    this.style.borderColor = "#2563eb";
+    this.style.background = "#eff6ff";
+});
+document.getElementById("imp-dropzone").addEventListener("dragleave", function(e) {
+    e.preventDefault();
+    this.style.borderColor = "#94a3b8";
+    this.style.background = "#f8fafc";
+});
+document.getElementById("imp-dropzone").addEventListener("drop", function(e) {
+    e.preventDefault();
+    this.style.borderColor = "#94a3b8";
+    this.style.background = "#f8fafc";
+    if (e.dataTransfer.files.length > 0) procesarArchivosImport(e.dataTransfer.files);
+});
+
+function excelToTSV(data) {
+    /* Convierte un workbook de SheetJS a texto tab-separated */
+    var ws = data.Sheets[data.SheetNames[0]];
+    var ref = ws["!ref"];
+    if (!ref) return "";
+    var range = XLSX.utils.decode_range(ref);
+    var lines = [];
+    for (var r = range.s.r; r <= range.e.r; r++) {
+        var cols = [];
+        for (var c = range.s.c; c <= range.e.c; c++) {
+            var addr = XLSX.utils.encode_cell({ r: r, c: c });
+            var cell = ws[addr];
+            var val = cell ? cell.v : "";
+            // Convert date serial to string
+            if (cell && cell.t === "d") {
+                val = val.toISOString ? val.toISOString().split("T")[0] : val;
+            }
+            cols.push(val !== undefined && val !== null ? String(val) : "");
+        }
+        lines.push(cols.join("\t"));
+    }
+    return lines.join("\n");
+}
+
+function procesarArchivosImport(files) {
+    if (!files || files.length === 0) return;
+    var formato = document.getElementById("imp-formato").value;
+    var ta = document.getElementById("imp-textarea");
+    var names = document.getElementById("li-file-names");
+    var namesList = [];
+    var total = files.length;
+    var loaded = 0;
+
+    names.textContent = "Leyendo " + total + " archivo(s)...";
+
+    for (var i = 0; i < total; i++) {
+        (function(file) {
+            var isExcel = /\.xlsx?$/i.test(file.name);
+            var shouldUseSheetJS = isExcel && (formato === "transparencia" || formato === "auto");
+
+            if (shouldUseSheetJS && typeof XLSX !== "undefined") {
+                /* Leer Excel con SheetJS */
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        var data = new Uint8Array(e.target.result);
+                        var wb = XLSX.read(data, { type: "array" });
+                        var tsv = excelToTSV(wb);
+                        if (tsv) {
+                            if (ta.value) ta.value += "\n\n";
+                            ta.value += tsv;
+                        }
+                        namesList.push(file.name);
+                        loaded++;
+                        names.textContent = "✅ " + loaded + "/" + total + " archivo(s): " + namesList.join(", ");
+                    } catch (err) {
+                        names.textContent = "⚠ Error al leer " + file.name;
+                        loaded++;
+                    }
+                    if (loaded === total && loaded > 0) {
+                        names.textContent = "✅ " + total + " archivo(s) cargados: " + namesList.join(", ");
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                /* Leer como texto (HTML/TXT para LEDER) */
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    if (ta.value) ta.value += "\n\n--- " + file.name + " ---\n\n";
+                    ta.value += e.target.result;
+                    namesList.push(file.name);
+                    loaded++;
+                    names.textContent = "📄 " + namesList.join(", ");
+                    if (loaded === total) {
+                        names.textContent = "✅ " + total + " archivo(s) cargados: " + namesList.join(", ");
+                    }
+                };
+                reader.readAsText(file, "UTF-8");
+            }
+        })(files[i]);
+    }
+}
+
+window.lederDropFiles = procesarArchivosImport;
 window.lederDebug = async function() {
     var raw = document.getElementById("imp-textarea").value.trim();
     if (!raw) { st("Pega o arrastra archivos primero", "error"); return; }
@@ -850,32 +966,6 @@ window.lederDebug = async function() {
         }
         div.innerHTML = html;
     } catch (err) { st(err.message, "error"); }
-};
-
-window.lederDropFiles = function(files) {
-    if (!files || files.length === 0) return;
-    var ta = document.getElementById("imp-textarea");
-    var names = document.getElementById("li-file-names");
-    var namesList = [];
-    var total = files.length;
-    var loaded = 0;
-    names.textContent = "Leyendo " + total + " archivo(s)...";
-    for (var i = 0; i < total; i++) {
-        (function(file) {
-            var reader = new FileReader();
-            reader.onload = function(e) {
-                if (ta.value) ta.value += "\n\n--- " + file.name + " ---\n\n";
-                ta.value += e.target.result;
-                namesList.push(file.name);
-                loaded++;
-                names.textContent = "📄 " + namesList.join(", ");
-                if (loaded === total) {
-                    names.textContent = "✅ " + total + " archivo(s) cargados: " + namesList.join(", ");
-                }
-            };
-            reader.readAsText(file, "UTF-8");
-        })(files[i]);
-    }
 };
 
 /* ─── Dashboard ─── */

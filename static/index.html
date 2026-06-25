@@ -10,6 +10,7 @@
     <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/family-chart@0.9.0/dist/family-chart.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/family-chart@0.9.0/dist/family-chart.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -579,14 +580,29 @@
                     <option value="transparencia">Transparencia OC/OS (SEACE)</option>
                 </select>            </div>
             <p id="imp-hint" class="import-info"></p>
+            <div id="imp-etiqueta-wrap">
             <div class="form-group">
                 <label for="imp-etiqueta">Etiqueta (opcional)</label>
                 <input type="text" id="imp-etiqueta" class="search-input" placeholder="Ej: PROVEEDOR 2019-2022">
+            </div>
             </div>
             <div class="form-group">
                 <label for="imp-textarea">Datos</label>
                 <textarea id="imp-textarea" class="import-textarea" rows="15" placeholder="Pegue aqui los datos a importar..."></textarea>
             </div>
+            <!-- Dropzone: visible para leder_telegram y transparencia -->
+            <div id="imp-dropzone-wrap" class="hidden" style="margin-bottom:12px;">
+                <div id="imp-dropzone" style="border:2px dashed #94a3b8;border-radius:12px;padding:32px 16px;text-align:center;cursor:pointer;background:#f8fafc;transition:all 0.2s;">
+                    <div style="font-size:2rem;margin-bottom:8px;">📂</div>
+                    <div style="font-weight:500;color:#475569;">Arrastra archivos aquí</div>
+                    <div style="font-size:0.85rem;color:#94a3b8;margin-top:4px;">o haz clic para seleccionar</div>
+                    <input type="file" id="imp-file-input" multiple accept=".html,.htm,.txt,.xlsx,.xls" style="display:none;">
+                </div>
+                <div id="li-file-names" style="margin-top:8px;font-size:0.85rem;color:#475569;"></div>
+            </div>
+            <!-- Elementos ocultos para compatibilidad con JS existente -->
+            <div id="imp-hint-list" class="hidden"></div>
+            <button id="btn-imp-debug" class="hidden" style="display:none;"></button>
             <div id="imp-resultado" class="hidden" style="margin-bottom:16px;padding:14px 18px;border-radius:8px;"></div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-ghost" data-close="modal-importar">Cerrar</button>
