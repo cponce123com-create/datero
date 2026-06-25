@@ -985,6 +985,7 @@ _CATEGORIAS = {
     "relacion_duplicada":         {"label": "Relaciones duplicadas",  "icon": "🔁"},
     "relacion_auto":              {"label": "Relaciones auto-ref.",   "icon": "🔄"},
     "relacion_invertida":         {"label": "Relaciones invertidas",  "icon": "🔃"},
+    "relacion_suelta":            {"label": "Relaciones LEDER sueltas","icon": "🧩"},
 }
 
 
@@ -1155,6 +1156,34 @@ def _ejecutar_verificacion(db: Session, categorias: Optional[list[str]] = None):
                 "relacion_id": r[0],
                 "origen_id": r[1],
                 "destino_id": r[2],
+                "tipo_relacion": r[3],
+            })
+
+    # ── 8. Relaciones LEDER sueltas (importadas con dni_ctx incorrecto) ──
+    if _activa("relacion_suelta"):
+        rows = db.execute(sa_text(f"""
+            SELECT r.id, r.persona_origen_id, r.persona_destino_id, r.tipo_relacion, r.notas
+            FROM relaciones r
+            WHERE r.notas LIKE '%LEDER:%'
+              AND r.tipo_relacion NOT IN ('padre', 'madre')
+            LIMIT {L}
+        """)).fetchall()
+        for r in rows:
+            origen = db.query(Persona).filter(Persona.id == r[1]).first()
+            destino = db.query(Persona).filter(Persona.id == r[2]).first()
+            nom_origen = f"{origen.nombres} {origen.apellido_paterno}" if origen else f"ID {r[1]}"
+            nom_destino = f"{destino.nombres} {destino.apellido_paterno}" if destino else f"ID {r[2]}"
+            label_nota = (r[4] or "")[:50]
+            observaciones.append({
+                "id": len(observaciones) + 1,
+                "tipo": "relacion_suelta",
+                "gravedad": "media",
+                "mensaje": f"Relacion '{r[3]}' de LEDER ({label_nota}) entre {nom_origen} y {nom_destino} — posible vinculacion incorrecta",
+                "relacion_id": r[0],
+                "origen_id": r[1],
+                "destino_id": r[2],
+                "dni_origen": origen.dni if origen else None,
+                "dni_destino": destino.dni if destino else None,
                 "tipo_relacion": r[3],
             })
 
