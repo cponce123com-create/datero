@@ -1217,6 +1217,97 @@ def api_verificar_corregir(
     return resultado
 
 
+@app.post("/api/verificar/corregir-lote")
+def api_verificar_corregir_lote(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Corrige multiples observaciones en un solo request (batch de 200)."""
+    from services.import_service import _obtener_o_crear_empresa, _obtener_o_crear_persona_legacy, _separar_nombre_completo, _vincular_si_no_existe
+
+    items = body.get("observaciones", [])
+    if not items:
+        return {"corregidas": 0, "errores": [], "mensaje": "Sin observaciones"}
+
+    items = items[:200]
+    corregidas = 0
+    errores = []
+
+    for item in items:
+        tipo = item.get("tipo", "")
+        ruc = item.get("ruc")
+        dni = item.get("dni")
+        relacion_id = item.get("relacion_id")
+        origen_id = item.get("origen_id")
+        destino_id = item.get("destino_id")
+        tipo_relacion = item.get("tipo_relacion")
+
+        try:
+            if tipo == "representante_no_vinculado" and ruc and dni:
+                empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
+                persona = db.query(Persona).filter(Persona.dni == dni).first()
+                if empresa and persona:
+                    existe = db.query(PersonaEmpresa).filter(
+                        PersonaEmpresa.persona_id == persona.id,
+                        PersonaEmpresa.empresa_id == empresa.id,
+                        PersonaEmpresa.cargo == "representante legal",
+                    ).first()
+                    if not existe:
+                        db.add(PersonaEmpresa(
+                            persona_id=persona.id, empresa_id=empresa.id,
+                            cargo="representante legal",
+                        ))
+                        corregidas += 1
+
+            elif tipo == "ruc10_sin_vinculo" and ruc:
+                empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
+                if empresa:
+                    dni10 = ruc[2:10]
+                    nombres, ap_paterno, ap_materno = _separar_nombre_completo(empresa.nombre)
+                    persona, _ = _obtener_o_crear_persona_legacy(db, dni10, nombres, ap_paterno, ap_materno)
+                    _vincular_si_no_existe(db, persona.id, empresa.id, "proveedor")
+                    corregidas += 1
+
+            elif tipo == "persona_huerfana" and dni:
+                persona = db.query(Persona).filter(Persona.dni == dni).first()
+                if persona:
+                    persona.activo = False
+                    corregidas += 1
+
+            elif tipo == "empresa_sin_vinculos" and ruc:
+                empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
+                if empresa:
+                    empresa.activo = False
+                    corregidas += 1
+
+            elif tipo == "relacion_duplicada" and origen_id and destino_id and tipo_relacion:
+                relaciones = db.query(Relacion).filter(
+                    Relacion.persona_origen_id == origen_id,
+                    Relacion.persona_destino_id == destino_id,
+                    Relacion.tipo_relacion == tipo_relacion,
+                ).order_by(Relacion.id).all()
+                if len(relaciones) > 1:
+                    for r in relaciones[1:]:
+                        db.delete(r)
+                        corregidas += 1
+
+            elif tipo == "relacion_auto" and relacion_id:
+                rel = db.query(Relacion).filter(Relacion.id == relacion_id).first()
+                if rel:
+                    db.delete(rel)
+                    corregidas += 1
+
+        except Exception as e:
+            errores.append({"idx": len(errores), "tipo": tipo, "error": str(e)[:100]})
+
+    db.commit()
+    mensaje = f"{corregidas} correccion(es) aplicadas"
+    if errores:
+        mensaje += f", {len(errores)} error(es)"
+    return {"corregidas": corregidas, "errores": errores, "mensaje": mensaje}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # HEALTH
 # ═══════════════════════════════════════════════════════════════════════════════

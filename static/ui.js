@@ -1347,36 +1347,33 @@ async function corregirObservacion(id, tipo, ruc, dni, relacionId, origenId, des
 
 async function corregirTodas() {
     if (!_verificarData || !_verificarData.observaciones || _verificarData.observaciones.length === 0) return;
-    if (!confirm("Corregir las " + _verificarData.observaciones.length + " observaciones automaticamente?")) return;
+    if (!confirm("Corregir las " + _verificarData.observaciones.length + " observaciones en un solo lote?")) return;
     var total = _verificarData.observaciones.length;
-    var corregidas = 0;
-    var errores = 0;
-    for (var i = 0; i < total; i++) {
-        var o = _verificarData.observaciones[i];
-        var el = document.getElementById("obs-" + o.id);
-        if (el) el.style.opacity = "0.5";
-        try {
-            var body = { tipo: o.tipo, ruc: o.ruc || null, dni: o.dni || null };
-            if (o.relacion_id !== undefined && o.relacion_id !== null) body.relacion_id = o.relacion_id;
-            if (o.origen_id !== undefined && o.origen_id !== null) body.origen_id = o.origen_id;
-            if (o.destino_id !== undefined && o.destino_id !== null) body.destino_id = o.destino_id;
-            if (o.tipo_relacion) body.tipo_relacion = o.tipo_relacion;
-            var resp = await af(A + "/verificar/corregir", { method: "POST", body: JSON.stringify(body) });
-            if (resp.corregido) {
-                corregidas++;
-                if (el) el.style.opacity = "0.3";
-                st("[" + (i+1) + "/" + total + "] " + resp.mensaje, "success");
-            } else {
-                errores++;
-                if (el) el.style.opacity = "0.6";
-                st("[" + (i+1) + "/" + total + "] " + resp.mensaje, "error");
-            }
-        } catch (err) {
-            errores++;
-            st("[" + (i+1) + "/" + total + "] Error: " + err.message, "error");
-        }
+    var ct = document.getElementById("verificador-content");
+    ct.innerHTML = '<div style="text-align:center;padding:40px;"><span class="spinner"></span><div style="margin-top:12px;">Corrigiendo ' + total + ' observaciones...</div></div>';
+
+    // Enviar todas en un solo request (backend procesa hasta 200)
+    var batch = _verificarData.observaciones.map(function(o) {
+        var item = { tipo: o.tipo, ruc: o.ruc || null, dni: o.dni || null };
+        if (o.relacion_id !== undefined && o.relacion_id !== null) item.relacion_id = o.relacion_id;
+        if (o.origen_id !== undefined && o.origen_id !== null) item.origen_id = o.origen_id;
+        if (o.destino_id !== undefined && o.destino_id !== null) item.destino_id = o.destino_id;
+        if (o.tipo_relacion) item.tipo_relacion = o.tipo_relacion;
+        return item;
+    });
+
+    try {
+        var resp = await af(A + "/verificar/corregir-lote", {
+            method: "POST",
+            body: JSON.stringify({ observaciones: batch }),
+        });
+        st(resp.mensaje, resp.errores && resp.errores.length > 0 ? "error" : "success");
+    } catch (err) {
+        st("Error en correccion masiva: " + err.message, "error");
     }
-    st("✅ Correccion masiva: " + corregidas + " corregidas, " + errores + " errores de " + total, corregidas > 0 ? "success" : "error");
+
+    // Recargar verificador para ver estado actualizado
+    setTimeout(abrirVerificador, 1000);
 }
 
 window.abrirVerificador = abrirVerificador;
