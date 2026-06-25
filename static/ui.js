@@ -1283,6 +1283,7 @@ window.crearVinculoDesdeConsulta = async function(ruc, dniRep) {
 }
 
 /* ─── Verificador de Consistencia ─── */
+var _verificarData = null;
 document.getElementById("btn-verificador").addEventListener("click", abrirVerificador);
 async function abrirVerificador() {
     om("modal-verificador");
@@ -1290,9 +1291,13 @@ async function abrirVerificador() {
     ct.innerHTML = '<span class="spinner"></span> Analizando base de datos...';
     try {
         var r = await af(A + "/verificar");
-        var h = '<div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;">';
+        _verificarData = r;
+        var h = '<div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">';
         h += '<span style="background:#2563eb;color:white;padding:4px 12px;border-radius:20px;font-size:0.9rem;">' + r.total_personas + ' personas</span>';
         h += '<span style="background:' + (r.total_observaciones > 0 ? "#dc2626" : "#16a34a") + ';color:white;padding:4px 12px;border-radius:20px;font-size:0.9rem;">' + r.total_observaciones + ' observaciones</span>';
+        if (r.observaciones.length > 0) {
+            h += '<button class="btn btn-primary btn-sm" onclick="corregirTodas()" style="margin-left:auto;">⚡ Corregir todo</button>';
+        }
         h += '</div>';
         if (r.observaciones.length === 0) {
             h += '<div style="text-align:center;padding:40px;color:var(--color-success);"><div style="font-size:3rem;margin-bottom:12px;">✅</div><div style="font-weight:600;">Base de datos consistente</div><div style="color:var(--color-text-secondary);font-size:0.9rem;">No se encontraron observaciones.</div></div>';
@@ -1339,5 +1344,41 @@ async function corregirObservacion(id, tipo, ruc, dni, relacionId, origenId, des
         st(err.message, "error");
     }
 }
+
+async function corregirTodas() {
+    if (!_verificarData || !_verificarData.observaciones || _verificarData.observaciones.length === 0) return;
+    if (!confirm("Corregir las " + _verificarData.observaciones.length + " observaciones automaticamente?")) return;
+    var total = _verificarData.observaciones.length;
+    var corregidas = 0;
+    var errores = 0;
+    for (var i = 0; i < total; i++) {
+        var o = _verificarData.observaciones[i];
+        var el = document.getElementById("obs-" + o.id);
+        if (el) el.style.opacity = "0.5";
+        try {
+            var body = { tipo: o.tipo, ruc: o.ruc || null, dni: o.dni || null };
+            if (o.relacion_id !== undefined && o.relacion_id !== null) body.relacion_id = o.relacion_id;
+            if (o.origen_id !== undefined && o.origen_id !== null) body.origen_id = o.origen_id;
+            if (o.destino_id !== undefined && o.destino_id !== null) body.destino_id = o.destino_id;
+            if (o.tipo_relacion) body.tipo_relacion = o.tipo_relacion;
+            var resp = await af(A + "/verificar/corregir", { method: "POST", body: JSON.stringify(body) });
+            if (resp.corregido) {
+                corregidas++;
+                if (el) el.style.opacity = "0.3";
+                st("[" + (i+1) + "/" + total + "] " + resp.mensaje, "success");
+            } else {
+                errores++;
+                if (el) el.style.opacity = "0.6";
+                st("[" + (i+1) + "/" + total + "] " + resp.mensaje, "error");
+            }
+        } catch (err) {
+            errores++;
+            st("[" + (i+1) + "/" + total + "] Error: " + err.message, "error");
+        }
+    }
+    st("✅ Correccion masiva: " + corregidas + " corregidas, " + errores + " errores de " + total, corregidas > 0 ? "success" : "error");
+}
+
 window.abrirVerificador = abrirVerificador;
 window.corregirObservacion = corregirObservacion;
+window.corregirTodas = corregirTodas;
