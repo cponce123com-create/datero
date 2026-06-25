@@ -104,6 +104,7 @@ def _vincular_si_no_existe(db: Session, persona_id: int, empresa_id: int, cargo:
     if existe:
         return False
     db.add(PersonaEmpresa(persona_id=persona_id, empresa_id=empresa_id, cargo=cargo))
+    db.flush()
     return True
 
 
