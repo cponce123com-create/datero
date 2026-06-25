@@ -96,6 +96,15 @@ def crear_relacion_bidireccional(
     if not tipo_inverso:
         raise ValueError(f"Tipo de relación no soportado: {tipo_directo}")
 
+    # Detectar ciclos antes de insertar (para relaciones padre/madre)
+    if tipo_directo in ("padre", "madre"):
+        from utils.graph_utils import detectar_ciclo_por_dni
+        if detectar_ciclo_por_dni(db, datos.persona_origen_dni, datos.persona_destino_dni):
+            raise ValueError(
+                f"No se puede crear la relación: {origen.nombre_completo} ya es "
+                f"descendiente de {destino.nombre_completo} (crearía un ciclo)"
+            )
+
     try:
         # Crear relación directa
         rel_directa = _crear_relacion_unica(

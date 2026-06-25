@@ -34,17 +34,7 @@ _TIPO_A_RELACION: Dict[str, str] = {
     "ESPOSO": "conyuge", "ESPOSA": "conyuge",
     "CONYUGE": "conyuge", "CONCUBINA": "conyuge",
     "COMPARTEN HIJOS": "conyuge",
-    "SOBRINO": "sobrino", "SOBRINA": "sobrina",
-    "TIO PATERNO": "tio", "TIO MATERNO": "tio",
-    "TIA PATERNA": "tia", "TIA MATERNA": "tia",
-    "PRIMO PATERNO": "primo", "PRIMO MATERNO": "primo",
-    "PRIMA PATERNA": "prima", "PRIMA MATERNA": "prima",
-    "CUNADO": "cunado", "CUNADA": "cunada",
     "HERMANASTRO": "hermanastro", "HERMANASTRA": "hermanastra",
-    "ABUELO": "abuelo", "ABUELA": "abuela",
-    "NIETO": "nieto", "NIETA": "nieta",
-    "SUEGRO": "suegro", "SUEGRA": "suegra",
-    "YERNO": "yerno", "NUERA": "nuera",
 }
 
 # Mapeo de tipos de meta para extraer datos complementarios
@@ -210,6 +200,28 @@ def _crear_relacion(
         notas=notas,
     ))
     return True
+
+
+def _inferir_genero_desde_db(db: Session, dni: str) -> str:
+    """Retorna 'MASCULINO' o 'FEMENINO' desde Persona.genero o relaciones."""
+    from sqlalchemy import text
+    # Intentar desde Persona.genero
+    row = db.execute(
+        text("SELECT genero FROM personas WHERE dni = :dni AND activo = true"),
+        {"dni": dni}
+    ).first()
+    if row and row[0]:
+        return row[0]
+    # Inferir desde relaciones padre/madre
+    row = db.execute(
+        text("SELECT tipo_relacion FROM relaciones r "
+             "JOIN personas p ON p.id = r.persona_origen_id "
+             "WHERE p.dni = :dni AND r.tipo_relacion IN ('padre','madre') LIMIT 1"),
+        {"dni": dni}
+    ).first()
+    if row:
+        return "MASCULINO" if row[0] == "padre" else "FEMENINO"
+    return "MASCULINO"
 
 
 def _actualizar_fecha_nac(db: Session, persona: Persona, fecha_str: Optional[str]):
@@ -415,7 +427,10 @@ def _parsear_arbol_genealogico(db: Session, texto: str, dni_ctx: Optional[str], 
                                "documento", f"LEDER: {tipo}"):
                 res.r += 1
         elif tipo in ("HIJO", "HIJA"):
-            if _crear_relacion(db, dni_ctx, blq["dni"], "hijo",
+            # HIJO/HIJA: origen=ctx (padre), destino=hijo, tipo segun genero
+            gen = _inferir_genero_desde_db(db, dni_ctx)
+            rel_padre = "padre" if gen == "MASCULINO" else "madre"
+            if _crear_relacion(db, dni_ctx, blq["dni"], rel_padre,
                                "documento", f"LEDER: {tipo}"):
                 res.r += 1
         else:
@@ -432,7 +447,9 @@ def _parsear_meta_familia_1(db: Session, texto: str, dni_ctx: Optional[str], res
             continue
         filiacion = (blq["filiacion"] or "").upper()
         if filiacion == "HIJO":
-            if _crear_relacion(db, dni_ctx, blq["dni"], "hijo", "documento"):
+            gen = _inferir_genero_desde_db(db, dni_ctx)
+            rel_padre = "padre" if gen == "MASCULINO" else "madre"
+            if _crear_relacion(db, dni_ctx, blq["dni"], rel_padre, "documento"):
                 res.r += 1
 
 

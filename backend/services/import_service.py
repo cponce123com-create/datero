@@ -1104,14 +1104,9 @@ def _crear_relacion_segura(
     db.flush()
     resultados["creados"] += 1
 
-    # Crear inversa si aplica
-    _INVERSO = {
-        "padre": "hijo", "madre": "hija",
-        "hijo": "padre", "hija": "madre",
-        "hermano": "hermano", "hermana": "hermana",
-        "conyuge": "conyuge",
-    }
-    tipo_inverso = _INVERSO.get(tipo)
+    # Crear inversa si aplica (usando el mismo diccionario que relacion_service.py)
+    from services.relacion_service import INVERSO
+    tipo_inverso = INVERSO.get(tipo)
     if tipo_inverso:
         inv_existente = db.query(Relacion).filter(
             Relacion.persona_origen_id == destino.id,

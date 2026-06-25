@@ -207,6 +207,15 @@ def crear_relacion(db: Session, datos: RelacionCreate) -> Relacion:
     if origen.id == destino.id:
         raise ValueError("No se puede crear una relación de una persona consigo misma")
 
+    # Detectar ciclos (para relaciones padre/madre)
+    if datos.tipo_relacion in ("padre", "madre"):
+        from utils.graph_utils import detectar_ciclo_por_dni
+        if detectar_ciclo_por_dni(db, datos.persona_origen_dni, datos.persona_destino_dni):
+            raise ValueError(
+                f"No se puede crear la relación: {origen.nombre_completo} ya es "
+                f"descendiente de {destino.nombre_completo} (crearía un ciclo)"
+            )
+
     # Verificar que no exista ya esta misma relación
     existente = (
         db.query(Relacion)

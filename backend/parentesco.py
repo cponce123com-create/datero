@@ -125,7 +125,7 @@ def _cte_parentesco_completo(db: Session, persona_id: int) -> List[Dict]:
           AND r.persona_destino_id != r.persona_origen_id
           AND NOT ciclo
     ),
-    -- 3. Hermanos (comparten al menos un progenitor)
+    -- 3. Hermanos (comparten al menos un progenitor O relacion directa)
     hermanos AS (
         SELECT DISTINCT
             r2.persona_destino_id AS hermano_id
@@ -135,6 +135,14 @@ def _cte_parentesco_completo(db: Session, persona_id: int) -> List[Dict]:
         WHERE r1.persona_destino_id = :pid
           AND r1.tipo_relacion IN ('padre', 'madre')
           AND r2.tipo_relacion IN ('padre', 'madre')
+        UNION
+        SELECT DISTINCT
+            CASE WHEN r.persona_origen_id = :pid THEN r.persona_destino_id
+                 ELSE r.persona_origen_id END AS hermano_id
+        FROM relaciones r
+        WHERE (r.persona_origen_id = :pid OR r.persona_destino_id = :pid)
+          AND r.tipo_relacion IN ('hermano', 'hermana')
+          AND r.persona_origen_id != r.persona_destino_id
     ),
     -- 4. Conyuges (relacion directa simetrica)
     conyuges AS (
