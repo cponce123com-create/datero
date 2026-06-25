@@ -406,7 +406,22 @@ def _parsear_reniec_online(db: Session, texto: str, res: LederResult) -> Optiona
 
 def _parsear_arbol_genealogico(db: Session, texto: str, dni_ctx: Optional[str], res: LederResult):
     """Parsea resultado de /ag (ARBOL GENEALOGICO).
-    Crea todas las personas del arbol y las relaciones."""
+    Crea todas las personas del arbol y las relaciones.
+
+    Intenta extraer el DNI de contexto desde el bloque mismo
+    (la entrada JEFE(A) contiene el DNI de la persona consultada)."""
+    # Pre-escaneo: buscar contexto dentro del propio bloque
+    ctx_local = None
+    for blq in _bloques_personas(texto):
+        filiacion = (blq.get("filiacion") or "").upper().strip()
+        tipo_blq = (blq.get("tipo") or "").upper().strip()
+        if filiacion == "JEFE(A)" or tipo_blq == "JEFE(A)":
+            ctx_local = blq["dni"]
+            break
+
+    # Usar contexto local si se encontró, si no el global
+    ctx = ctx_local or dni_ctx
+
     for blq in _bloques_personas(texto):
         p = _crear_persona_desde_bloque(db, blq)
         res.p += 1
@@ -416,21 +431,28 @@ def _parsear_arbol_genealogico(db: Session, texto: str, dni_ctx: Optional[str], 
         if not tipo or tipo in ("JEFE(A)", "", "NINGUNA"):
             continue
 
-        # Si hay DNI de contexto, crear relacion entre dni_ctx y esta persona
-        if not dni_ctx:
+        # Necesitamos contexto para crear relaciones
+        if not ctx:
             continue
 
         # Mapear tipo de relacion
         rel_base = _TIPO_A_RELACION.get(tipo)
         if rel_base:
-            if _crear_relacion(db, dni_ctx, blq["dni"], rel_base,
+            # PADRE/MADRE: el familiar es ORIGEN, ctx es DESTINO
+            # (el padre/madre ES padre/madre de ctx)
+            if rel_base in ("padre", "madre"):
+                orig, dest = blq["dni"], ctx
+            else:
+                # HERMANO/HERMANA/CONYUGE: orden no importa (simétrico)
+                orig, dest = ctx, blq["dni"]
+            if _crear_relacion(db, orig, dest, rel_base,
                                "documento", f"LEDER: {tipo}"):
                 res.r += 1
         elif tipo in ("HIJO", "HIJA"):
             # HIJO/HIJA: origen=ctx (padre), destino=hijo, tipo segun genero
-            gen = _inferir_genero_desde_db(db, dni_ctx)
+            gen = _inferir_genero_desde_db(db, ctx)
             rel_padre = "padre" if gen == "MASCULINO" else "madre"
-            if _crear_relacion(db, dni_ctx, blq["dni"], rel_padre,
+            if _crear_relacion(db, ctx, blq["dni"], rel_padre,
                                "documento", f"LEDER: {tipo}"):
                 res.r += 1
         else:
@@ -465,7 +487,13 @@ def _parsear_meta_familia_2(db: Session, texto: str, dni_ctx: Optional[str], res
             continue
         rel_base = _TIPO_A_RELACION.get(tipo)
         if rel_base:
-            if _crear_relacion(db, dni_ctx, blq["dni"], rel_base,
+            # PADRE/MADRE: el familiar es ORIGEN, dni_ctx es DESTINO
+            if rel_base in ("padre", "madre"):
+                orig, dest = blq["dni"], dni_ctx
+            else:
+                # HERMANO/CONYUGE/etc: simétrico
+                orig, dest = dni_ctx, blq["dni"]
+            if _crear_relacion(db, orig, dest, rel_base,
                                "documento", f"LEDER: {tipo}"):
                 res.r += 1
 
