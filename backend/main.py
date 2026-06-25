@@ -1316,15 +1316,15 @@ def api_verificar_corregir(
     elif tipo == "relacion_invertida" and relacion_id and origen_id and destino_id and tipo_relacion:
         rel = db.query(Relacion).filter(Relacion.id == relacion_id).first()
         if rel and rel.tipo_relacion in ("padre", "madre"):
-            notas_original = rel.notas
             db.delete(rel)
-            # Crear la relacion correcta: familiar (origen) -> ctx (destino)
+            # Crear la relacion correcta sin la nota LEDER (para evitar
+            # que el verificador la vuelva a detectar como invertida)
             db.add(Relacion(
                 persona_origen_id=destino_id,
                 persona_destino_id=origen_id,
                 tipo_relacion=tipo_relacion,
                 certeza="documento",
-                notas=notas_original,
+                notas=None,
             ))
             db.commit()
             resultado["corregido"] = True
@@ -1419,14 +1419,13 @@ def api_verificar_corregir_lote(
             elif tipo == "relacion_invertida" and relacion_id and origen_id and destino_id and tipo_relacion:
                 rel = db.query(Relacion).filter(Relacion.id == relacion_id).first()
                 if rel and rel.tipo_relacion in ("padre", "madre"):
-                    notas_original = rel.notas
                     db.delete(rel)
                     db.add(Relacion(
                         persona_origen_id=destino_id,
                         persona_destino_id=origen_id,
                         tipo_relacion=tipo_relacion,
                         certeza="documento",
-                        notas=notas_original,
+                        notas=None,
                     ))
                     corregidas += 1
 
