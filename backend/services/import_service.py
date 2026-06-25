@@ -49,6 +49,7 @@ def _etiquetar_persona(db: Session, persona_id: int, etiqueta_id: Optional[int])
     if existe:
         return False
     db.add(PersonaEtiqueta(persona_id=persona_id, etiqueta_id=etiqueta_id))
+    db.flush()
     return True
 
 
@@ -62,6 +63,7 @@ def _etiquetar_empresa(db: Session, empresa_id: int, etiqueta_id: Optional[int])
     if existe:
         return False
     db.add(EmpresaEtiqueta(empresa_id=empresa_id, etiqueta_id=etiqueta_id))
+    db.flush()  # flush inmediato para evitar duplicados si la misma empresa aparece varias veces
     return True
 
 
