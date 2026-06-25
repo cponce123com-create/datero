@@ -1300,7 +1300,7 @@ async function abrirVerificador() {
             r.observaciones.forEach(function(o) {
                 var color = o.gravedad === "alta" ? "#dc2626" : o.gravedad === "media" ? "#d97706" : "#64748b";
                 var icon = o.gravedad === "alta" ? "🔴" : o.gravedad === "media" ? "🟡" : "ℹ️";
-                h += '<div style="padding:12px 16px;margin-bottom:8px;border-radius:8px;border-left:4px solid ' + color + ';background:#f8fafc;">';
+                h += '<div id="obs-' + o.id + '" style="padding:12px 16px;margin-bottom:8px;border-radius:8px;border-left:4px solid ' + color + ';background:#f8fafc;">';
                 h += '<div style="display:flex;justify-content:space-between;align-items:start;">';
                 h += '<div><strong>' + icon + ' ' + es(o.mensaje) + '</strong></div>';
                 h += '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px;">';
@@ -1308,6 +1308,7 @@ async function abrirVerificador() {
                 if (o.ruc) h += '<button class="btn btn-outline btn-xs" onclick="cfEmpresa(\'' + o.ruc + '\')">🏢</button>';
                 if (o.dni_origen) h += '<button class="btn btn-outline btn-xs" onclick="cf(\'' + o.dni_origen + '\')">👤1</button>';
                 if (o.dni_destino) h += '<button class="btn btn-outline btn-xs" onclick="cf(\'' + o.dni_destino + '\')">👤2</button>';
+                h += '<button class="btn btn-primary btn-xs" onclick="corregirObservacion(' + o.id + ',\'' + o.tipo + '\',\'' + (o.ruc || "") + '\',\'' + (o.dni || "") + '\',' + (o.relacion_id || "null") + ',' + (o.origen_id || "null") + ',' + (o.destino_id || "null") + ',\'' + (o.tipo_relacion || "") + '\')" style="margin-left:4px;">🔧 Corregir</button>';
                 h += '</div></div></div>';
             });
         }
@@ -1317,4 +1318,26 @@ async function abrirVerificador() {
         ct.innerHTML = '<div class="no-results">Error: ' + es(err.message) + '</div>';
     }
 }
+
+async function corregirObservacion(id, tipo, ruc, dni, relacionId, origenId, destinoId, tipoRelacion) {
+    if (!confirm("Corregir esta observacion?")) return;
+    var body = { tipo: tipo, ruc: ruc || null, dni: dni || null };
+    if (relacionId !== null) body.relacion_id = relacionId;
+    if (origenId !== null) body.origen_id = origenId;
+    if (destinoId !== null) body.destino_id = destinoId;
+    if (tipoRelacion) body.tipo_relacion = tipoRelacion;
+    try {
+        var resp = await af(A + "/verificar/corregir", { method: "POST", body: JSON.stringify(body) });
+        if (resp.corregido) {
+            st(resp.mensaje, "success");
+            var el = document.getElementById("obs-" + id);
+            if (el) el.style.opacity = "0.4";
+        } else {
+            st(resp.mensaje, "error");
+        }
+    } catch (err) {
+        st(err.message, "error");
+    }
+}
 window.abrirVerificador = abrirVerificador;
+window.corregirObservacion = corregirObservacion;

@@ -1000,6 +1000,7 @@ def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requier
     """)).fetchall()
     for r in rows:
         observaciones.append({
+            "id": len(observaciones) + 1,
             "tipo": "representante_no_vinculado",
             "gravedad": "media",
             "mensaje": f"Empresa '{r[1]}' (RUC {r[0]}) tiene representante legal DNI {r[2]} ({r[3] or '?'}) sin vincular como 'representante legal'",
@@ -1020,6 +1021,7 @@ def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requier
     """)).fetchall()
     for r in rows:
         observaciones.append({
+            "id": len(observaciones) + 1,
             "tipo": "ruc10_sin_vinculo",
             "gravedad": "baja",
             "mensaje": f"Empresa RUC 10 '{r[1]}' (RUC {r[0]}) no tiene persona vinculada como proveedor",
@@ -1040,6 +1042,7 @@ def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requier
     for r in rows:
         nombre = f"{r[1]} {r[2]}".strip()
         observaciones.append({
+            "id": len(observaciones) + 1,
             "tipo": "persona_huerfana",
             "gravedad": "info",
             "mensaje": f"Persona '{nombre}' (DNI {r[0]}) no tiene relaciones ni empresas vinculadas",
@@ -1055,6 +1058,7 @@ def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requier
     """)).fetchall()
     for r in rows:
         observaciones.append({
+            "id": len(observaciones) + 1,
             "tipo": "empresa_sin_vinculos",
             "gravedad": "info",
             "mensaje": f"Empresa '{r[1]}' (RUC {r[0]}) no tiene personas vinculadas",
@@ -1075,11 +1079,15 @@ def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requier
         nom_po = f"{po.nombres} {po.apellido_paterno}" if po else f"ID {r[0]}"
         nom_pd = f"{pd.nombres} {pd.apellido_paterno}" if pd else f"ID {r[1]}"
         observaciones.append({
+            "id": len(observaciones) + 1,
             "tipo": "relacion_duplicada",
             "gravedad": "alta",
             "mensaje": f"Relacion duplicada ({r[2]}) entre {nom_po} y {nom_pd} — {r[3]} veces",
             "dni_origen": po.dni if po else None,
             "dni_destino": pd.dni if pd else None,
+            "origen_id": r[0],
+            "destino_id": r[1],
+            "tipo_relacion": r[2],
         })
 
     # 6. Relaciones auto-referenciales
@@ -1092,10 +1100,12 @@ def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requier
         p = db.query(Persona).filter(Persona.id == r[1]).first()
         nom = f"{p.nombres} {p.apellido_paterno}" if p else f"ID {r[1]}"
         observaciones.append({
+            "id": len(observaciones) + 1,
             "tipo": "relacion_auto",
             "gravedad": "alta",
             "mensaje": f"Relacion auto-referencial ({r[2]}): {nom} consigo mismo",
             "dni": p.dni if p else None,
+            "relacion_id": r[0],
         })
 
     return {
@@ -1103,6 +1113,108 @@ def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requier
         "total_personas": total_personas,
         "observaciones": observaciones,
     }
+
+
+@app.post("/api/verificar/corregir")
+def api_verificar_corregir(
+    body: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Corrige una observacion del verificador."""
+    from sqlalchemy import text as sa_text
+
+    tipo = body.get("tipo", "")
+    ruc = body.get("ruc")
+    dni = body.get("dni")
+    relacion_id = body.get("relacion_id")
+    origen_id = body.get("origen_id")
+    destino_id = body.get("destino_id")
+    tipo_relacion = body.get("tipo_relacion")
+    resultado = {"corregido": False, "mensaje": ""}
+
+    if tipo == "representante_no_vinculado" and ruc and dni:
+        empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
+        persona = db.query(Persona).filter(Persona.dni == dni).first()
+        if empresa and persona:
+            existe = db.query(PersonaEmpresa).filter(
+                PersonaEmpresa.persona_id == persona.id,
+                PersonaEmpresa.empresa_id == empresa.id,
+                PersonaEmpresa.cargo == "representante legal",
+            ).first()
+            if not existe:
+                db.add(PersonaEmpresa(
+                    persona_id=persona.id, empresa_id=empresa.id,
+                    cargo="representante legal",
+                ))
+                db.commit()
+                resultado["corregido"] = True
+                resultado["mensaje"] = f"{persona.nombre_completo} vinculado como representante legal de {empresa.nombre}"
+            else:
+                resultado["mensaje"] = "Ya esta vinculado"
+        else:
+            resultado["mensaje"] = "Empresa o persona no encontrada"
+
+    elif tipo == "ruc10_sin_vinculo" and ruc:
+        from services.import_service import _obtener_o_crear_empresa, _obtener_o_crear_persona_legacy, _separar_nombre_completo, _vincular_si_no_existe
+        empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
+        if empresa:
+            dni10 = ruc[2:10]
+            nombres, ap_paterno, ap_materno = _separar_nombre_completo(empresa.nombre)
+            persona, creada = _obtener_o_crear_persona_legacy(db, dni10, nombres, ap_paterno, ap_materno)
+            vinculo_creado = _vincular_si_no_existe(db, persona.id, empresa.id, "proveedor")
+            db.commit()
+            resultado["corregido"] = True
+            resultado["mensaje"] = f"{'Creada y v' if creada else 'V'}inculada persona {persona.nombre_completo} como proveedor de {empresa.nombre}"
+        else:
+            resultado["mensaje"] = "Empresa no encontrada"
+
+    elif tipo == "persona_huerfana" and dni:
+        persona = db.query(Persona).filter(Persona.dni == dni).first()
+        if persona:
+            persona.activo = False
+            db.commit()
+            resultado["corregido"] = True
+            resultado["mensaje"] = f"Persona {persona.nombre_completo} desactivada (baja logica)"
+        else:
+            resultado["mensaje"] = "Persona no encontrada"
+
+    elif tipo == "empresa_sin_vinculos" and ruc:
+        empresa = db.query(Empresa).filter(Empresa.ruc == ruc).first()
+        if empresa:
+            empresa.activo = False
+            db.commit()
+            resultado["corregido"] = True
+            resultado["mensaje"] = f"Empresa {empresa.nombre} desactivada (baja logica)"
+        else:
+            resultado["mensaje"] = "Empresa no encontrada"
+
+    elif tipo == "relacion_duplicada" and origen_id and destino_id and tipo_relacion:
+        relaciones = db.query(Relacion).filter(
+            Relacion.persona_origen_id == origen_id,
+            Relacion.persona_destino_id == destino_id,
+            Relacion.tipo_relacion == tipo_relacion,
+        ).order_by(Relacion.id).all()
+        if len(relaciones) > 1:
+            for r in relaciones[1:]:
+                db.delete(r)
+            db.commit()
+            resultado["corregido"] = True
+            resultado["mensaje"] = f"Eliminadas {len(relaciones) - 1} relacion(es) duplicada(s), conservada la primera"
+        else:
+            resultado["mensaje"] = "No hay duplicados"
+
+    elif tipo == "relacion_auto" and relacion_id:
+        rel = db.query(Relacion).filter(Relacion.id == relacion_id).first()
+        if rel:
+            db.delete(rel)
+            db.commit()
+            resultado["corregido"] = True
+            resultado["mensaje"] = "Relacion auto-referencial eliminada"
+        else:
+            resultado["mensaje"] = "Relacion no encontrada"
+
+    return resultado
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
