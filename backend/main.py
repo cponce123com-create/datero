@@ -976,143 +976,216 @@ def api_search(q: str = Query(..., min_length=2), db: Session = Depends(get_db),
 # VERIFICADOR DE CONSISTENCIA
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@app.get("/api/verificar")
-def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
-    """Verifica la consistencia de la base de datos y reporta observaciones."""
+_LIMITE_VERIFICADOR = 500
+_CATEGORIAS = {
+    "representante_no_vinculado": {"label": "Representantes legales", "icon": "👔"},
+    "ruc10_sin_vinculo":          {"label": "RUC 10 sin vínculo",     "icon": "🔟"},
+    "persona_huerfana":           {"label": "Personas huérfanas",     "icon": "👤"},
+    "empresa_sin_vinculos":       {"label": "Empresas sin vínculos",  "icon": "🏢"},
+    "relacion_duplicada":         {"label": "Relaciones duplicadas",  "icon": "🔁"},
+    "relacion_auto":              {"label": "Relaciones auto-ref.",   "icon": "🔄"},
+}
+
+
+def _ejecutar_verificacion(db: Session, categorias: Optional[list[str]] = None):
+    """Ejecuta verificaciones de consistencia. Si `categorias` no es None,
+    solo ejecuta las categorías indicadas."""
     from sqlalchemy import text as sa_text
 
+    CAT = set(categorias or [])
+    L = _LIMITE_VERIFICADOR
+
+    def _activa(*nombres):
+        return not CAT or any(n in CAT for n in nombres)
+
     observaciones = []
+    total_personas = 0
 
-    # 1. Representantes legales no vinculados
-    rows = db.execute(sa_text("""
-        SELECT e.ruc, e.nombre, e.representante_legal_dni, e.representante_legal_nombre
-        FROM empresas e
-        WHERE e.representante_legal_dni IS NOT NULL
-          AND e.activo = true
-          AND NOT EXISTS (
-            SELECT 1 FROM persona_empresa pe
-            JOIN personas p ON p.id = pe.persona_id
-            WHERE pe.empresa_id = e.id
-              AND p.dni = e.representante_legal_dni
-              AND pe.cargo = 'representante legal'
-          )
-        LIMIT 20
-    """)).fetchall()
-    for r in rows:
-        observaciones.append({
-            "id": len(observaciones) + 1,
-            "tipo": "representante_no_vinculado",
-            "gravedad": "media",
-            "mensaje": f"Empresa '{r[1]}' (RUC {r[0]}) tiene representante legal DNI {r[2]} ({r[3] or '?'}) sin vincular como 'representante legal'",
-            "ruc": r[0],
-            "dni": r[2],
-        })
+    # ── 1. Representantes legales no vinculados ──
+    if _activa("representante_no_vinculado"):
+        rows = db.execute(sa_text(f"""
+            SELECT e.ruc, e.nombre, e.representante_legal_dni, e.representante_legal_nombre
+            FROM empresas e
+            WHERE e.representante_legal_dni IS NOT NULL
+              AND e.activo = true
+              AND NOT EXISTS (
+                SELECT 1 FROM persona_empresa pe
+                JOIN personas p ON p.id = pe.persona_id
+                WHERE pe.empresa_id = e.id
+                  AND p.dni = e.representante_legal_dni
+                  AND pe.cargo = 'representante legal'
+              )
+            LIMIT {L}
+        """)).fetchall()
+        for r in rows:
+            observaciones.append({
+                "id": len(observaciones) + 1,
+                "tipo": "representante_no_vinculado",
+                "gravedad": "media",
+                "mensaje": f"Empresa '{r[1]}' (RUC {r[0]}) tiene representante legal DNI {r[2]} ({r[3] or '?'}) sin vincular como 'representante legal'",
+                "ruc": r[0],
+                "dni": r[2],
+            })
 
-    # 2. RUC 10 sin persona vinculada
-    rows = db.execute(sa_text("""
-        SELECT e.ruc, e.nombre FROM empresas e
-        WHERE e.ruc LIKE '10%' AND e.activo = true
-          AND NOT EXISTS (
-            SELECT 1 FROM persona_empresa pe
-            JOIN personas p ON p.id = pe.persona_id
-            WHERE pe.empresa_id = e.id AND pe.cargo = 'proveedor'
-          )
-        LIMIT 20
-    """)).fetchall()
-    for r in rows:
-        observaciones.append({
-            "id": len(observaciones) + 1,
-            "tipo": "ruc10_sin_vinculo",
-            "gravedad": "baja",
-            "mensaje": f"Empresa RUC 10 '{r[1]}' (RUC {r[0]}) no tiene persona vinculada como proveedor",
-            "ruc": r[0],
-        })
+    # ── 2. RUC 10 sin persona vinculada ──
+    if _activa("ruc10_sin_vinculo"):
+        rows = db.execute(sa_text(f"""
+            SELECT e.ruc, e.nombre FROM empresas e
+            WHERE e.ruc LIKE '10%' AND e.activo = true
+              AND NOT EXISTS (
+                SELECT 1 FROM persona_empresa pe
+                JOIN personas p ON p.id = pe.persona_id
+                WHERE pe.empresa_id = e.id AND pe.cargo = 'proveedor'
+              )
+            LIMIT {L}
+        """)).fetchall()
+        for r in rows:
+            observaciones.append({
+                "id": len(observaciones) + 1,
+                "tipo": "ruc10_sin_vinculo",
+                "gravedad": "baja",
+                "mensaje": f"Empresa RUC 10 '{r[1]}' (RUC {r[0]}) no tiene persona vinculada como proveedor",
+                "ruc": r[0],
+            })
 
-    # 3. Personas sin ningun vinculo (huerfanas)
-    total_personas = db.execute(sa_text("""
-        SELECT COUNT(*) FROM personas WHERE activo = true
-    """)).scalar()
-    rows = db.execute(sa_text("""
-        SELECT p.dni, p.nombres, p.apellido_paterno FROM personas p
-        WHERE p.activo = true
-          AND NOT EXISTS (SELECT 1 FROM relaciones r WHERE r.persona_origen_id = p.id OR r.persona_destino_id = p.id)
-          AND NOT EXISTS (SELECT 1 FROM persona_empresa pe WHERE pe.persona_id = p.id)
-        LIMIT 20
-    """)).fetchall()
-    for r in rows:
-        nombre = f"{r[1]} {r[2]}".strip()
-        observaciones.append({
-            "id": len(observaciones) + 1,
-            "tipo": "persona_huerfana",
-            "gravedad": "info",
-            "mensaje": f"Persona '{nombre}' (DNI {r[0]}) no tiene relaciones ni empresas vinculadas",
-            "dni": r[0],
-        })
+    # ── 3. Personas sin ningún vínculo (huérfanas) ──
+    if _activa("persona_huerfana"):
+        total_personas = db.execute(sa_text("""
+            SELECT COUNT(*) FROM personas WHERE activo = true
+        """)).scalar()
+        rows = db.execute(sa_text(f"""
+            SELECT p.dni, p.nombres, p.apellido_paterno FROM personas p
+            WHERE p.activo = true
+              AND NOT EXISTS (SELECT 1 FROM relaciones r WHERE r.persona_origen_id = p.id OR r.persona_destino_id = p.id)
+              AND NOT EXISTS (SELECT 1 FROM persona_empresa pe WHERE pe.persona_id = p.id)
+            LIMIT {L}
+        """)).fetchall()
+        for r in rows:
+            nombre = f"{r[1]} {r[2]}".strip()
+            observaciones.append({
+                "id": len(observaciones) + 1,
+                "tipo": "persona_huerfana",
+                "gravedad": "info",
+                "mensaje": f"Persona '{nombre}' (DNI {r[0]}) no tiene relaciones ni empresas vinculadas",
+                "dni": r[0],
+            })
 
-    # 4. Empresas sin personas vinculadas
-    rows = db.execute(sa_text("""
-        SELECT e.ruc, e.nombre FROM empresas e
-        WHERE e.activo = true
-          AND NOT EXISTS (SELECT 1 FROM persona_empresa pe WHERE pe.empresa_id = e.id)
-        LIMIT 20
-    """)).fetchall()
-    for r in rows:
-        observaciones.append({
-            "id": len(observaciones) + 1,
-            "tipo": "empresa_sin_vinculos",
-            "gravedad": "info",
-            "mensaje": f"Empresa '{r[1]}' (RUC {r[0]}) no tiene personas vinculadas",
-            "ruc": r[0],
-        })
+    # ── 4. Empresas sin personas vinculadas ──
+    if _activa("empresa_sin_vinculos"):
+        rows = db.execute(sa_text(f"""
+            SELECT e.ruc, e.nombre FROM empresas e
+            WHERE e.activo = true
+              AND NOT EXISTS (SELECT 1 FROM persona_empresa pe WHERE pe.empresa_id = e.id)
+            LIMIT {L}
+        """)).fetchall()
+        for r in rows:
+            observaciones.append({
+                "id": len(observaciones) + 1,
+                "tipo": "empresa_sin_vinculos",
+                "gravedad": "info",
+                "mensaje": f"Empresa '{r[1]}' (RUC {r[0]}) no tiene personas vinculadas",
+                "ruc": r[0],
+            })
 
-    # 5. Relaciones duplicadas
-    rows = db.execute(sa_text("""
-        SELECT r1.persona_origen_id, r1.persona_destino_id, r1.tipo_relacion, COUNT(*) as cnt
-        FROM relaciones r1
-        GROUP BY r1.persona_origen_id, r1.persona_destino_id, r1.tipo_relacion
-        HAVING COUNT(*) > 1
-        LIMIT 10
-    """)).fetchall()
-    for r in rows:
-        po = db.query(Persona).filter(Persona.id == r[0]).first()
-        pd = db.query(Persona).filter(Persona.id == r[1]).first()
-        nom_po = f"{po.nombres} {po.apellido_paterno}" if po else f"ID {r[0]}"
-        nom_pd = f"{pd.nombres} {pd.apellido_paterno}" if pd else f"ID {r[1]}"
-        observaciones.append({
-            "id": len(observaciones) + 1,
-            "tipo": "relacion_duplicada",
-            "gravedad": "alta",
-            "mensaje": f"Relacion duplicada ({r[2]}) entre {nom_po} y {nom_pd} — {r[3]} veces",
-            "dni_origen": po.dni if po else None,
-            "dni_destino": pd.dni if pd else None,
-            "origen_id": r[0],
-            "destino_id": r[1],
-            "tipo_relacion": r[2],
-        })
+    # ── 5. Relaciones duplicadas ──
+    if _activa("relacion_duplicada"):
+        rows = db.execute(sa_text(f"""
+            SELECT r1.persona_origen_id, r1.persona_destino_id, r1.tipo_relacion, COUNT(*) as cnt
+            FROM relaciones r1
+            GROUP BY r1.persona_origen_id, r1.persona_destino_id, r1.tipo_relacion
+            HAVING COUNT(*) > 1
+            LIMIT {L}
+        """)).fetchall()
+        for r in rows:
+            po = db.query(Persona).filter(Persona.id == r[0]).first()
+            pd = db.query(Persona).filter(Persona.id == r[1]).first()
+            nom_po = f"{po.nombres} {po.apellido_paterno}" if po else f"ID {r[0]}"
+            nom_pd = f"{pd.nombres} {pd.apellido_paterno}" if pd else f"ID {r[1]}"
+            observaciones.append({
+                "id": len(observaciones) + 1,
+                "tipo": "relacion_duplicada",
+                "gravedad": "alta",
+                "mensaje": f"Relacion duplicada ({r[2]}) entre {nom_po} y {nom_pd} — {r[3]} veces",
+                "dni_origen": po.dni if po else None,
+                "dni_destino": pd.dni if pd else None,
+                "origen_id": r[0],
+                "destino_id": r[1],
+                "tipo_relacion": r[2],
+            })
 
-    # 6. Relaciones auto-referenciales
-    rows = db.execute(sa_text("""
-        SELECT r.id, r.persona_origen_id, r.tipo_relacion FROM relaciones r
-        WHERE r.persona_origen_id = r.persona_destino_id
-        LIMIT 5
-    """)).fetchall()
-    for r in rows:
-        p = db.query(Persona).filter(Persona.id == r[1]).first()
-        nom = f"{p.nombres} {p.apellido_paterno}" if p else f"ID {r[1]}"
-        observaciones.append({
-            "id": len(observaciones) + 1,
-            "tipo": "relacion_auto",
-            "gravedad": "alta",
-            "mensaje": f"Relacion auto-referencial ({r[2]}): {nom} consigo mismo",
-            "dni": p.dni if p else None,
-            "relacion_id": r[0],
-        })
+    # ── 6. Relaciones auto-referenciales ──
+    if _activa("relacion_auto"):
+        rows = db.execute(sa_text(f"""
+            SELECT r.id, r.persona_origen_id, r.tipo_relacion FROM relaciones r
+            WHERE r.persona_origen_id = r.persona_destino_id
+            LIMIT {L}
+        """)).fetchall()
+        for r in rows:
+            p = db.query(Persona).filter(Persona.id == r[1]).first()
+            nom = f"{p.nombres} {p.apellido_paterno}" if p else f"ID {r[1]}"
+            observaciones.append({
+                "id": len(observaciones) + 1,
+                "tipo": "relacion_auto",
+                "gravedad": "alta",
+                "mensaje": f"Relacion auto-referencial ({r[2]}): {nom} consigo mismo",
+                "dni": p.dni if p else None,
+                "relacion_id": r[0],
+            })
 
     return {
         "total_observaciones": len(observaciones),
         "total_personas": total_personas,
         "observaciones": observaciones,
     }
+
+
+@app.get("/api/verificar")
+def api_verificar(
+    categoria: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Verifica la consistencia de la base de datos.
+    - `categoria` (opcional): filtrar por tipo específico.
+    """
+    cats = [categoria] if categoria else None
+    return _ejecutar_verificacion(db, cats)
+
+
+@app.get("/api/verificar/representantes")
+def api_verificar_representantes(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Solo verifica representantes legales no vinculados."""
+    return _ejecutar_verificacion(db, ["representante_no_vinculado"])
+
+
+@app.get("/api/verificar/personas")
+def api_verificar_personas(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Solo verifica personas huérfanas (sin relaciones ni empresas)."""
+    return _ejecutar_verificacion(db, ["persona_huerfana"])
+
+
+@app.get("/api/verificar/empresas")
+def api_verificar_empresas(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Solo verifica empresas sin vínculos y RUC 10 sin persona."""
+    return _ejecutar_verificacion(db, ["ruc10_sin_vinculo", "empresa_sin_vinculos"])
+
+
+@app.get("/api/verificar/relaciones")
+def api_verificar_relaciones(
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(requiere_rol("admin")),
+):
+    """Solo verifica relaciones duplicadas y auto-referenciales."""
+    return _ejecutar_verificacion(db, ["relacion_duplicada", "relacion_auto"])
 
 
 @app.post("/api/verificar/corregir")

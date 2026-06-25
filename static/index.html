@@ -656,6 +656,13 @@
             <button class="modal-close" data-close="modal-verificador">&times;</button>
         </div>
         <div class="modal-body">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border);">
+                <button class="btn btn-outline btn-xs" onclick="abrirVerificador('todo')" data-cat="todo" style="font-size:0.8rem;">📋 Todo</button>
+                <button class="btn btn-outline btn-xs" onclick="abrirVerificador('representantes')" data-cat="representantes" style="font-size:0.8rem;">👔 Representantes</button>
+                <button class="btn btn-outline btn-xs" onclick="abrirVerificador('personas')" data-cat="personas" style="font-size:0.8rem;">👤 Personas</button>
+                <button class="btn btn-outline btn-xs" onclick="abrirVerificador('empresas')" data-cat="empresas" style="font-size:0.8rem;">🏢 Empresas</button>
+                <button class="btn btn-outline btn-xs" onclick="abrirVerificador('relaciones')" data-cat="relaciones" style="font-size:0.8rem;">🔗 Relaciones</button>
+            </div>
             <div id="verificador-content" class="loading-text">Cargando...</div>
         </div>
     </div>

@@ -1284,23 +1284,36 @@ window.crearVinculoDesdeConsulta = async function(ruc, dniRep) {
 
 /* ─── Verificador de Consistencia ─── */
 var _verificarData = null;
-document.getElementById("btn-verificador").addEventListener("click", abrirVerificador);
-async function abrirVerificador() {
+document.getElementById("btn-verificador").addEventListener("click", function(){ abrirVerificador('todo'); });
+async function abrirVerificador(categoria) {
+    categoria = categoria || 'todo';
     om("modal-verificador");
+    // Highlight active category button
+    document.querySelectorAll('[data-cat]').forEach(function(b){ b.style.borderColor = 'transparent'; });
+    var activeBtn = document.querySelector('[data-cat="' + categoria + '"]');
+    if (activeBtn) activeBtn.style.borderColor = 'var(--primary)';
     var ct = document.getElementById("verificador-content");
-    ct.innerHTML = '<span class="spinner"></span> Analizando base de datos...';
+    var labels = { todo: 'completo', representantes: 'representantes', personas: 'personas', empresas: 'empresas', relaciones: 'relaciones' };
+    ct.innerHTML = '<span class="spinner"></span> Analizando ' + labels[categoria] + '...';
     try {
-        var r = await af(A + "/verificar");
+        var url = A + "/verificar";
+        if (categoria === 'representantes') url = A + "/verificar/representantes";
+        else if (categoria === 'personas') url = A + "/verificar/personas";
+        else if (categoria === 'empresas') url = A + "/verificar/empresas";
+        else if (categoria === 'relaciones') url = A + "/verificar/relaciones";
+        var r = await af(url);
         _verificarData = r;
         var h = '<div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">';
-        h += '<span style="background:#2563eb;color:white;padding:4px 12px;border-radius:20px;font-size:0.9rem;">' + r.total_personas + ' personas</span>';
+        if (r.total_personas > 0) {
+            h += '<span style="background:#2563eb;color:white;padding:4px 12px;border-radius:20px;font-size:0.9rem;">' + r.total_personas + ' personas</span>';
+        }
         h += '<span style="background:' + (r.total_observaciones > 0 ? "#dc2626" : "#16a34a") + ';color:white;padding:4px 12px;border-radius:20px;font-size:0.9rem;">' + r.total_observaciones + ' observaciones</span>';
         if (r.observaciones.length > 0) {
             h += '<button class="btn btn-primary btn-sm" onclick="corregirTodas()" style="margin-left:auto;">⚡ Corregir todo</button>';
         }
         h += '</div>';
         if (r.observaciones.length === 0) {
-            h += '<div style="text-align:center;padding:40px;color:var(--color-success);"><div style="font-size:3rem;margin-bottom:12px;">✅</div><div style="font-weight:600;">Base de datos consistente</div><div style="color:var(--color-text-secondary);font-size:0.9rem;">No se encontraron observaciones.</div></div>';
+            h += '<div style="text-align:center;padding:40px;color:var(--color-success);"><div style="font-size:3rem;margin-bottom:12px;">✅</div><div style="font-weight:600;">Sin observaciones</div><div style="color:var(--color-text-secondary);font-size:0.9rem;">No se encontraron problemas en esta categoría.</div></div>';
         } else {
             r.observaciones.forEach(function(o) {
                 var color = o.gravedad === "alta" ? "#dc2626" : o.gravedad === "media" ? "#d97706" : "#64748b";
@@ -1317,7 +1330,7 @@ async function abrirVerificador() {
                 h += '</div></div></div>';
             });
         }
-        h += '<div style="margin-top:16px;text-align:center;"><button class="btn btn-outline" onclick="abrirVerificador()">🔄 Re-verificar</button></div>';
+        h += '<div style="margin-top:16px;text-align:center;"><button class="btn btn-outline" onclick="abrirVerificador(\'' + categoria + '\')">🔄 Re-verificar</button></div>';
         ct.innerHTML = h;
     } catch (err) {
         ct.innerHTML = '<div class="no-results">Error: ' + es(err.message) + '</div>';
