@@ -725,6 +725,15 @@ def _importar_transparencia(
         if creada:
             empresas_creadas += 1
 
+        # Si es RUC 10 (persona natural), extraer DNI y vincular como proveedor
+        if ruc.startswith("10") and len(ruc) == 11:
+            dni = ruc[2:10]  # RUC 10 = "10" + DNI(8) + digito_verificador(1)
+            nombres, ap_paterno, ap_materno = _separar_nombre_completo(nombre)
+            persona, _ = _obtener_o_crear_persona_legacy(
+                db, dni, nombres, ap_paterno, ap_materno,
+            )
+            _vincular_si_no_existe(db, persona.id, empresa.id, "proveedor")
+
         contrato = {
             "tipo": tipo,
             "numero": numero,

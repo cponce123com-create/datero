@@ -321,7 +321,38 @@ function rfEmpresa(d) {
     h += '<button class="btn btn-outline btn-sm" onclick="enriquecerEmpresa(\x27' + es(e.ruc) + '\x27)" title="Completar datos desde SUNAT">🔄 SUNAT</button>';
     h += '<button class="btn btn-ghost btn-sm btn-delete-empresa" data-ruc="' + es(e.ruc) + '">🗑 Eliminar</button>';
     h += '</div></div><div class="ficha-body">';
-    if (e.notas) h += '<div class="ficha-notas">📝 ' + es(e.notas) + '</div>';
+    if (e.notas) h += '<div class=\"ficha-notas\">📝 ' + es(e.notas) + '</div>';
+
+    // ── Contratos (desde notas JSON del import transparencia) ──
+    var contratos = [];
+    if (e.notas) {
+        try {
+            var parsed = JSON.parse(e.notas);
+            if (parsed.contratos && Array.isArray(parsed.contratos)) {
+                contratos = parsed.contratos;
+            }
+        } catch (ex) { /* notas no es JSON, ignorar */ }
+    }
+    if (contratos.length > 0) {
+        var totalMonto = contratos.reduce(function(sum, c) { return sum + (c.importe || 0); }, 0);
+        h += '<div class=\"section\"><div class=\"section-title\">📋 Órdenes de Compra/Servicio <span class=\"section-badge\">' + contratos.length + '</span></div>';
+        h += '<div style=\"margin-bottom:8px;font-size:0.9rem;color:var(--color-text-secondary);\">💰 Total: S/. ' + totalMonto.toLocaleString(\"es-PE\", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</div>';
+        h += '<div class=\"relaciones-list\" style=\"max-height:400px;overflow-y:auto;\">';
+        contratos.forEach(function(c) {
+            var tipoIcon = c.tipo && c.tipo.toUpperCase().indexOf(\"O/C\") !== -1 ? \"🛒\" : \"🔧\";
+            h += '<div class=\"relacion-card\">';
+            h += '<div class=\"relacion-info\">';
+            h += '<div class=\"relacion-tipo\">' + tipoIcon + ' ' + es(c.tipo || \"\") + ' N° ' + es(c.numero || \"\") + '</div>';
+            h += '<div class=\"relacion-nombre\">' + es(c.descripcion || \"\") + '</div>';
+            h += '<div class=\"relacion-certeza\">';
+            if (c.fecha) h += '📅 ' + es(c.fecha) + ' · ';
+            h += '💰 S/. ' + (c.importe || 0).toLocaleString(\"es-PE\", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (c.estado) h += ' · ' + es(c.estado);
+            h += '</div>';
+            h += '</div></div>';
+        });
+        h += '</div></div>';
+    }
 
     // ── Datos SUNAT ──
     h += '<div class="section"><div class="section-title">📊 Datos SUNAT <span style="font-weight:400;font-size:0.75rem;color:var(--color-text-secondary);">(completa con 🔄 SUNAT)</span></div><div class="sunat-grid">';
