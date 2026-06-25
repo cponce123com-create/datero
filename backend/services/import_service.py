@@ -1,5 +1,5 @@
 """
-import_service.py — Importador unificado de RedCorruptela.
+import_service.py — Importador unificado de Datero.
 
 Antes existían 5 endpoints distintos con lógica de detección de tipo de RUC,
 creación de etiquetas, y dedupe de Persona/Empresa duplicada en 3-4 lugares

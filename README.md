@@ -1,4 +1,4 @@
-# RedCorruptela 🔍
+# Datero 🔍
 
 **Sistema de inteligencia para detección de redes de corrupción y favoritismo político.**
 
@@ -39,10 +39,10 @@ Además, incorpora un sistema de **etiquetas** para marcar a personas con cargos
 
 1. Regístrate en [neon.tech](https://neon.tech)
 2. Crea un nuevo proyecto
-3. Crea una base de datos llamada `redcorruptela`
+3. Crea una base de datos llamada `datero`
 4. Copia la **connection string** (DATABASE_URL). Se verá así:
    ```
-   postgresql://usuario:password@ep-xxxx.us-east-2.aws.neon.tech/redcorruptela?sslmode=require
+   postgresql://usuario:password@ep-xxxx.us-east-2.aws.neon.tech/datero?sslmode=require
    ```
 
 ### Paso 2: Configurar Render
@@ -53,7 +53,7 @@ Además, incorpora un sistema de **etiquetas** para marcar a personas con cargos
    - **Runtime:** Python 3
    - **Build Command:** `pip install -r backend/requirements.txt`
    - **Start Command:** `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
-   - **Root Directory:** _(dejar vacío o `redcorruptela`)_
+   - **Root Directory:** _(dejar vacío o `datero`)_
 
 4. Agrega las **variables de entorno**:
    | Variable | Descripción |
@@ -65,7 +65,7 @@ Además, incorpora un sistema de **etiquetas** para marcar a personas con cargos
 
 ### Paso 3: Acceder a la aplicación
 
-Una vez desplegada, Render te dará una URL tipo `https://redcorruptela.onrender.com`.
+Una vez desplegada, Render te dará una URL tipo `https://datero.onrender.com`.
 
 Al abrirla, el navegador pedirá credenciales (HTTP Basic Auth). Usa las definidas en `AUTH_USERS`.
 
@@ -74,7 +74,7 @@ Al abrirla, el navegador pedirá credenciales (HTTP Basic Auth). Usa las definid
 ```bash
 # Clonar el repositorio
 git clone <repo-url>
-cd redcorruptela
+cd datero
 
 # Crear entorno virtual
 python -m venv venv

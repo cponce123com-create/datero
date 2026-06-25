@@ -84,7 +84,7 @@ def seed_usuario_admin(db: Session):
     Crea o migra el usuario admin desde AUTH_USERS en la base de datos.
     Se llama al iniciar la aplicación.
     """
-    raw = os.getenv("AUTH_USERS", "admin:redcorruptela2024")
+    raw = os.getenv("AUTH_USERS", "admin:datero2024")
     for par in raw.split(","):
         par = par.strip()
         if ":" not in par:

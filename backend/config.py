@@ -21,7 +21,7 @@ class Settings:
     # ── Base de datos ────────────────────────────────────────────────
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5432/redcorruptela"
+        "postgresql://postgres:postgres@localhost:5432/datero"
     )
 
     # ── JWT ──────────────────────────────────────────────────────────

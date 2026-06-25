@@ -1,5 +1,5 @@
 /**
- * app.js — Punto de entrada de la aplicación RedCorruptela.
+ * app.js — Punto de entrada de la aplicación Datero.
  */
 
 /* ─── Funciones que ui.js espera ─── */
@@ -231,7 +231,7 @@ document.addEventListener("DOMContentLoaded", function(){
 async function _init() {
     try {
         await af(A + "/health");
-        console.log("RedCorruptela API v0.3 - sesion activa");
+        console.log("Datero API v0.3 - sesion activa");
         cargarKPIs();
         setTimeout(drawGraph, 500);
     } catch (err) {

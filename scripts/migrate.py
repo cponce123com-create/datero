@@ -1,5 +1,5 @@
 """
-migrate.py — Script de migraciones para RedCorruptela.
+migrate.py — Script de migraciones para Datero.
 
 Ejecuta:
 1. Creación de tablas (Base.metadata.create_all)
@@ -238,7 +238,7 @@ def step_create_indexes():
 
 def main():
     print("=" * 60)
-    print("  RedCorruptela — Migraciones")
+    print("  Datero — Migraciones")
     print("=" * 60)
     print()
 

@@ -1,5 +1,5 @@
 """
-models.py — Modelos SQLAlchemy para la base de datos de RedCorruptela.
+models.py — Modelos SQLAlchemy para la base de datos de Datero.
 
 Define tablas principales:
   - personas: datos biográficos de cada individuo (DNI único).

@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/redcorruptela"
+    "postgresql://postgres:postgres@localhost:5432/datero"
 )
 
 engine = create_engine(

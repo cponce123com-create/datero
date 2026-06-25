@@ -242,6 +242,29 @@ function rf(d) {
             var desde = pe.fecha_desde ? "desde " + pe.fecha_desde : "";
             var hasta = pe.fecha_hasta ? " hasta " + pe.fecha_hasta : "";
             h += '<div class="relacion-card"><div class="relacion-info"><div class="relacion-tipo" style="color:var(--color-primary);">' + es(cargoLabel) + '</div><div class="relacion-nombre empresa-link" data-ruc="' + es(pe.empresa.ruc) + '">🏢 ' + es(pe.empresa.nombre) + '</div><div class="relacion-certeza">RUC: ' + es(pe.empresa.ruc) + (desde || hasta ? " (" + desde + hasta + ")" : "") + (pe.observacion ? " — " + es(pe.observacion) : "") + '</div></div><button class="relacion-delete btn-desvincular-empresa" data-id="' + pe.id + '" title="Desvincular">✕</button></div>';
+            // Mostrar contratos de la empresa si tiene notas JSON
+            if (pe.empresa.notas) {
+                try {
+                    var parsed = JSON.parse(pe.empresa.notas);
+                    if (parsed.contratos && parsed.contratos.length > 0) {
+                        var subtotal = parsed.contratos.reduce(function(s, c) { return s + (c.importe || 0); }, 0);
+                        h += '<div style="padding:4px 12px 8px 12px;margin:-4px 0 8px 0;font-size:0.8rem;background:#f1f5f9;border-radius:0 0 8px 8px;border-left:3px solid var(--color-primary);">';
+                        h += '<div style="font-weight:500;color:var(--color-primary);margin-bottom:4px;">📋 Contratos (' + parsed.contratos.length + ' · S/. ' + subtotal.toLocaleString("es-PE", { minimumFractionDigits: 2 }) + ')</div>';
+                        parsed.contratos.slice(0, 3).forEach(function(c) {
+                            h += '<div style="padding:2px 0;color:#475569;">';
+                            var icon = c.tipo && c.tipo.indexOf("O/C") !== -1 ? "🛒" : "🔧";
+                            h += icon + ' ' + es(c.tipo || "") + ' N°' + es(c.numero || "") + ' — ' + (c.descripcion || "").substring(0, 80);
+                            if (c.descripcion && c.descripcion.length > 80) h += '…';
+                            h += ' <span style="color:#64748b;">S/. ' + (c.importe || 0).toLocaleString("es-PE", { minimumFractionDigits: 2 }) + '</span>';
+                            h += '</div>';
+                        });
+                        if (parsed.contratos.length > 3) {
+                            h += '<div style="padding:2px 0;color:#94a3b8;font-style:italic;">+ ' + (parsed.contratos.length - 3) + ' más…</div>';
+                        }
+                        h += '</div>';
+                    }
+                } catch (ex) { /* ignorar */ }
+            }
         });
         h += '</div>';
     } else { h += '<p style="color:var(--color-text-secondary);font-size:0.9rem;">Sin empresas vinculadas.</p>'; }
@@ -1258,3 +1281,40 @@ window.crearVinculoDesdeConsulta = async function(ruc, dniRep) {
         cf(dniRep);
     } catch (err) { st(err.message, "error"); }
 }
+
+/* ─── Verificador de Consistencia ─── */
+document.getElementById("btn-verificador").addEventListener("click", abrirVerificador);
+async function abrirVerificador() {
+    om("modal-verificador");
+    var ct = document.getElementById("verificador-content");
+    ct.innerHTML = '<span class="spinner"></span> Analizando base de datos...';
+    try {
+        var r = await af(A + "/verificar");
+        var h = '<div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;">';
+        h += '<span style="background:#2563eb;color:white;padding:4px 12px;border-radius:20px;font-size:0.9rem;">' + r.total_personas + ' personas</span>';
+        h += '<span style="background:' + (r.total_observaciones > 0 ? "#dc2626" : "#16a34a") + ';color:white;padding:4px 12px;border-radius:20px;font-size:0.9rem;">' + r.total_observaciones + ' observaciones</span>';
+        h += '</div>';
+        if (r.observaciones.length === 0) {
+            h += '<div style="text-align:center;padding:40px;color:var(--color-success);"><div style="font-size:3rem;margin-bottom:12px;">✅</div><div style="font-weight:600;">Base de datos consistente</div><div style="color:var(--color-text-secondary);font-size:0.9rem;">No se encontraron observaciones.</div></div>';
+        } else {
+            r.observaciones.forEach(function(o) {
+                var color = o.gravedad === "alta" ? "#dc2626" : o.gravedad === "media" ? "#d97706" : "#64748b";
+                var icon = o.gravedad === "alta" ? "🔴" : o.gravedad === "media" ? "🟡" : "ℹ️";
+                h += '<div style="padding:12px 16px;margin-bottom:8px;border-radius:8px;border-left:4px solid ' + color + ';background:#f8fafc;">';
+                h += '<div style="display:flex;justify-content:space-between;align-items:start;">';
+                h += '<div><strong>' + icon + ' ' + es(o.mensaje) + '</strong></div>';
+                h += '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px;">';
+                if (o.dni) h += '<button class="btn btn-outline btn-xs" onclick="cf(\'' + o.dni + '\')">👤</button>';
+                if (o.ruc) h += '<button class="btn btn-outline btn-xs" onclick="cfEmpresa(\'' + o.ruc + '\')">🏢</button>';
+                if (o.dni_origen) h += '<button class="btn btn-outline btn-xs" onclick="cf(\'' + o.dni_origen + '\')">👤1</button>';
+                if (o.dni_destino) h += '<button class="btn btn-outline btn-xs" onclick="cf(\'' + o.dni_destino + '\')">👤2</button>';
+                h += '</div></div></div>';
+            });
+        }
+        h += '<div style="margin-top:16px;text-align:center;"><button class="btn btn-outline" onclick="abrirVerificador()">🔄 Re-verificar</button></div>';
+        ct.innerHTML = h;
+    } catch (err) {
+        ct.innerHTML = '<div class="no-results">Error: ' + es(err.message) + '</div>';
+    }
+}
+window.abrirVerificador = abrirVerificador;

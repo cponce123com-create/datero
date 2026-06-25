@@ -1,5 +1,5 @@
 """
-main.py — Aplicación principal de RedCorruptela (FastAPI).
+main.py — Aplicación principal de Datero (FastAPI).
 
 Punto de entrada del backend. Define todas las rutas REST y sirve
 los archivos estáticos del frontend.
@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="RedCorruptela API",
+    title="Datero API",
     description="API para la deteccion de redes de corrupcion mediante analisis de parentescos",
     version="0.3.0",
     lifespan=lifespan,
@@ -973,6 +973,139 @@ def api_search(q: str = Query(..., min_length=2), db: Session = Depends(get_db),
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# VERIFICADOR DE CONSISTENCIA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/verificar")
+def api_verificar(db: Session = Depends(get_db), user: Usuario = Depends(requiere_rol("admin"))):
+    """Verifica la consistencia de la base de datos y reporta observaciones."""
+    from sqlalchemy import text as sa_text
+
+    observaciones = []
+
+    # 1. Representantes legales no vinculados
+    rows = db.execute(sa_text("""
+        SELECT e.ruc, e.nombre, e.representante_legal_dni, e.representante_legal_nombre
+        FROM empresas e
+        WHERE e.representante_legal_dni IS NOT NULL
+          AND e.activo = true
+          AND NOT EXISTS (
+            SELECT 1 FROM persona_empresa pe
+            JOIN personas p ON p.id = pe.persona_id
+            WHERE pe.empresa_id = e.id
+              AND p.dni = e.representante_legal_dni
+              AND pe.cargo = 'representante legal'
+          )
+        LIMIT 20
+    """)).fetchall()
+    for r in rows:
+        observaciones.append({
+            "tipo": "representante_no_vinculado",
+            "gravedad": "media",
+            "mensaje": f"Empresa '{r[1]}' (RUC {r[0]}) tiene representante legal DNI {r[2]} ({r[3] or '?'}) sin vincular como 'representante legal'",
+            "ruc": r[0],
+            "dni": r[2],
+        })
+
+    # 2. RUC 10 sin persona vinculada
+    rows = db.execute(sa_text("""
+        SELECT e.ruc, e.nombre FROM empresas e
+        WHERE e.ruc LIKE '10%' AND e.activo = true
+          AND NOT EXISTS (
+            SELECT 1 FROM persona_empresa pe
+            JOIN personas p ON p.id = pe.persona_id
+            WHERE pe.empresa_id = e.id AND pe.cargo = 'proveedor'
+          )
+        LIMIT 20
+    """)).fetchall()
+    for r in rows:
+        observaciones.append({
+            "tipo": "ruc10_sin_vinculo",
+            "gravedad": "baja",
+            "mensaje": f"Empresa RUC 10 '{r[1]}' (RUC {r[0]}) no tiene persona vinculada como proveedor",
+            "ruc": r[0],
+        })
+
+    # 3. Personas sin ningun vinculo (huerfanas)
+    total_personas = db.execute(sa_text("""
+        SELECT COUNT(*) FROM personas WHERE activo = true
+    """)).scalar()
+    rows = db.execute(sa_text("""
+        SELECT p.dni, p.nombres, p.apellido_paterno FROM personas p
+        WHERE p.activo = true
+          AND NOT EXISTS (SELECT 1 FROM relaciones r WHERE r.persona_origen_id = p.id OR r.persona_destino_id = p.id)
+          AND NOT EXISTS (SELECT 1 FROM persona_empresa pe WHERE pe.persona_id = p.id)
+        LIMIT 20
+    """)).fetchall()
+    for r in rows:
+        nombre = f"{r[1]} {r[2]}".strip()
+        observaciones.append({
+            "tipo": "persona_huerfana",
+            "gravedad": "info",
+            "mensaje": f"Persona '{nombre}' (DNI {r[0]}) no tiene relaciones ni empresas vinculadas",
+            "dni": r[0],
+        })
+
+    # 4. Empresas sin personas vinculadas
+    rows = db.execute(sa_text("""
+        SELECT e.ruc, e.nombre FROM empresas e
+        WHERE e.activo = true
+          AND NOT EXISTS (SELECT 1 FROM persona_empresa pe WHERE pe.empresa_id = e.id)
+        LIMIT 20
+    """)).fetchall()
+    for r in rows:
+        observaciones.append({
+            "tipo": "empresa_sin_vinculos",
+            "gravedad": "info",
+            "mensaje": f"Empresa '{r[1]}' (RUC {r[0]}) no tiene personas vinculadas",
+            "ruc": r[0],
+        })
+
+    # 5. Relaciones duplicadas
+    rows = db.execute(sa_text("""
+        SELECT r1.persona_origen_id, r1.persona_destino_id, r1.tipo_relacion, COUNT(*) as cnt
+        FROM relaciones r1
+        GROUP BY r1.persona_origen_id, r1.persona_destino_id, r1.tipo_relacion
+        HAVING COUNT(*) > 1
+        LIMIT 10
+    """)).fetchall()
+    for r in rows:
+        po = db.query(Persona).filter(Persona.id == r[0]).first()
+        pd = db.query(Persona).filter(Persona.id == r[1]).first()
+        nom_po = f"{po.nombres} {po.apellido_paterno}" if po else f"ID {r[0]}"
+        nom_pd = f"{pd.nombres} {pd.apellido_paterno}" if pd else f"ID {r[1]}"
+        observaciones.append({
+            "tipo": "relacion_duplicada",
+            "gravedad": "alta",
+            "mensaje": f"Relacion duplicada ({r[2]}) entre {nom_po} y {nom_pd} — {r[3]} veces",
+            "dni_origen": po.dni if po else None,
+            "dni_destino": pd.dni if pd else None,
+        })
+
+    # 6. Relaciones auto-referenciales
+    rows = db.execute(sa_text("""
+        SELECT r.id, r.persona_origen_id, r.tipo_relacion FROM relaciones r
+        WHERE r.persona_origen_id = r.persona_destino_id
+        LIMIT 5
+    """)).fetchall()
+    for r in rows:
+        p = db.query(Persona).filter(Persona.id == r[1]).first()
+        nom = f"{p.nombres} {p.apellido_paterno}" if p else f"ID {r[1]}"
+        observaciones.append({
+            "tipo": "relacion_auto",
+            "gravedad": "alta",
+            "mensaje": f"Relacion auto-referencial ({r[2]}): {nom} consigo mismo",
+            "dni": p.dni if p else None,
+        })
+
+    return {
+        "total_observaciones": len(observaciones),
+        "total_personas": total_personas,
+        "observaciones": observaciones,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # HEALTH
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -981,4 +1114,4 @@ def api_search(q: str = Query(..., min_length=2), db: Session = Depends(get_db),
 @app.get("/api/health")
 @app.head("/api/health")
 def health_check():
-    return {"status": "ok", "app": "RedCorruptela", "version": "0.3.0"}
+    return {"status": "ok", "app": "Datero", "version": "0.3.0"}

@@ -1,5 +1,5 @@
 """
-alembic/env.py — Entorno Alembic para migraciones de RedCorruptela.
+alembic/env.py — Entorno Alembic para migraciones de Datero.
 
 Uso:
   cd backend

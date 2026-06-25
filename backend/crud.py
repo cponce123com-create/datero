@@ -76,12 +76,24 @@ def obtener_persona_por_dni(db: Session, dni: str) -> Optional[Persona]:
 
 def buscar_personas(db: Session, query: str, limite: int = 20) -> List[Persona]:
     """
-    Busca personas cuyo nombre, apellido o DNI contengan el texto.
-    Usa pg_trgm (similitud) si existe, con fallback a ILIKE clasico.
+    Busca personas por DNI, nombre o apellido con ranking por relevancia.
+
+    Orden de prioridad:
+      1. DNI exacto
+      2. DNI empieza con (autocompletado)
+      3. Coincidencia en nombre completo (nombres + apellidos juntos)
+      4. Apellido paterno exacto
+      5. Apellido paterno empieza con
+      6. Coincidencia parcial (ILIKE) en cualquier campo
     """
+    query = query.strip()
+    if not query:
+        return []
+
     patron = f"%{query}%"
     try:
         from sqlalchemy import text as sa_text
+        # Intentar con pg_trgm si esta disponible
         check = db.execute(sa_text(
             "SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'"
         )).first()
@@ -91,15 +103,35 @@ def buscar_personas(db: Session, query: str, limite: int = 20) -> List[Persona]:
                        fecha_nacimiento, foto_url, notas, activo, creado_en
                 FROM personas
                 WHERE activo = true
-                  AND (dni ILIKE :pat OR nombres % :q
-                       OR apellido_paterno % :q OR apellido_materno % :q)
-                ORDER BY CASE WHEN dni = :q_exact THEN 0
-                         WHEN dni ILIKE :pat THEN 1 ELSE 2 END,
-                         similarity(nombres, :q) DESC
+                  AND (dni ILIKE :pat
+                       OR nombres % :q
+                       OR apellido_paterno % :q
+                       OR apellido_materno % :q
+                       OR (nombres || ' ' || COALESCE(apellido_paterno,'') || ' ' || COALESCE(apellido_materno,'')) % :q
+                       OR (COALESCE(apellido_paterno,'') || ' ' || COALESCE(apellido_materno,'') || ' ' || nombres) % :q)
+                ORDER BY
+                  CASE
+                    WHEN dni = :q_exact THEN 0
+                    WHEN dni ILIKE :q_prefix THEN 1
+                    WHEN (nombres || ' ' || COALESCE(apellido_paterno,'') || ' ' || COALESCE(apellido_materno,'')) % :q THEN 2
+                    WHEN apellido_paterno = :q THEN 3
+                    WHEN apellido_paterno ILIKE :q_prefix THEN 4
+                    ELSE 5
+                  END,
+                  GREATEST(
+                    similarity(COALESCE(dni,''), :q),
+                    similarity(COALESCE(nombres,''), :q),
+                    similarity(COALESCE(apellido_paterno,''), :q),
+                    similarity(COALESCE(apellido_materno,''), :q)
+                  ) DESC,
+                  apellido_paterno ASC,
+                  nombres ASC
                 LIMIT :lim
             """)
+            q_prefix = query + "%"
             rows = db.execute(sql, {
-                "pat": patron, "q": query, "q_exact": query, "lim": limite
+                "pat": patron, "q": query, "q_exact": query,
+                "q_prefix": q_prefix, "lim": limite
             }).fetchall()
             return [Persona(id=r[0], dni=r[1], nombres=r[2],
                     apellido_paterno=r[3], apellido_materno=r[4],
@@ -107,11 +139,24 @@ def buscar_personas(db: Session, query: str, limite: int = 20) -> List[Persona]:
                     notas=r[7], activo=r[8], creado_en=r[9]) for r in rows]
     except Exception:
         pass
-    return db.query(Persona).filter(Persona.activo == True, or_(
-        Persona.dni.ilike(patron), Persona.nombres.ilike(patron),
-        Persona.apellido_paterno.ilike(patron),
-        Persona.apellido_materno.ilike(patron),
-    )).limit(limite).all()
+
+    # Fallback: ILIKE clasico con orden alfabetico
+    from sqlalchemy import or_
+    return (
+        db.query(Persona)
+        .filter(
+            Persona.activo == True,
+            or_(
+                Persona.dni.ilike(patron),
+                Persona.nombres.ilike(patron),
+                Persona.apellido_paterno.ilike(patron),
+                Persona.apellido_materno.ilike(patron),
+            ),
+        )
+        .order_by(Persona.apellido_paterno.asc(), Persona.nombres.asc())
+        .limit(limite)
+        .all()
+    )
 
 
 def actualizar_persona(db: Session, dni: str, datos: PersonaUpdate) -> Optional[Persona]:
