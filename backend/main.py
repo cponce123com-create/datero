@@ -976,6 +976,8 @@ def api_search(q: str = Query(..., min_length=2), db: Session = Depends(get_db),
 # HEALTH
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@app.get("/health")
+@app.head("/health")
 @app.get("/api/health")
 @app.head("/api/health")
 def health_check():
