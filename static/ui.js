@@ -732,8 +732,8 @@ var IMP_PLACEHOLDERS = {
 function impActualizarVista() {
     var formato = document.getElementById("imp-formato").value;
     document.getElementById("imp-hint").textContent = IMP_HINTS[formato] || "";
-    var dropzoneVisible = (formato === "leder_telegram" || formato === "transparencia");
-    document.getElementById("imp-dropzone-wrap").classList.toggle("hidden", !dropzoneVisible);
+    // Dropzone visible siempre (se auto-detecta el formato al arrastrar)
+    document.getElementById("imp-dropzone-wrap").classList.remove("hidden");
     document.getElementById("imp-hint-list").classList.toggle("hidden", formato !== "leder_telegram");
     document.getElementById("imp-etiqueta-wrap").classList.toggle("hidden", formato === "leder_telegram");
     document.getElementById("btn-imp-debug").classList.toggle("hidden", formato !== "leder_telegram");
@@ -873,6 +873,21 @@ function procesarArchivosImport(files) {
     var namesList = [];
     var total = files.length;
     var loaded = 0;
+
+    // Auto-detectar formato segun tipo de archivo
+    var hasExcel = false;
+    var hasHtml = false;
+    for (var fi = 0; fi < total; fi++) {
+        if (/\.xlsx?$/i.test(files[fi].name)) hasExcel = true;
+        else if (/\.html?$/i.test(files[fi].name)) hasHtml = true;
+    }
+    if (hasExcel && !hasHtml && (formato === "auto" || formato === "transparencia")) {
+        document.getElementById("imp-formato").value = "transparencia";
+        impActualizarVista();
+    } else if (hasHtml && !hasExcel && (formato === "auto" || formato === "leder_telegram")) {
+        document.getElementById("imp-formato").value = "leder_telegram";
+        impActualizarVista();
+    }
 
     names.textContent = "Leyendo " + total + " archivo(s)...";
 
