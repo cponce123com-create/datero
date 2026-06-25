@@ -1361,6 +1361,16 @@ def api_verificar_corregir(
         else:
             resultado["mensaje"] = "Relacion no encontrada o tipo no valido"
 
+    elif tipo == "relacion_suelta" and relacion_id:
+        rel = db.query(Relacion).filter(Relacion.id == relacion_id).first()
+        if rel:
+            db.delete(rel)
+            db.commit()
+            resultado["corregido"] = True
+            resultado["mensaje"] = "Relacion LEDER suelta eliminada"
+        else:
+            resultado["mensaje"] = "Relacion no encontrada"
+
     return resultado
 
 
