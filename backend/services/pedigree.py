@@ -116,8 +116,10 @@ class Pedigree:
 
         for p in parientes:
             if p["pasos"] == 1:  # Solo parientes directos
+                # Obtener los parientes reales de cada persona en cada nivel
+                parientes_hijo = self.get_parentescos(p["dni"])
                 child_tree = self._build_tree(
-                    p["dni"], parientes, max_depth - 1, visited
+                    p["dni"], parientes_hijo, max_depth - 1, visited
                 )
                 if child_tree:
                     child_tree["tipo_relacion"] = p["tipo_parentesco"]
