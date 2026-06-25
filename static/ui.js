@@ -717,6 +717,7 @@ var IMP_HINTS = {
     sunat_macro: "Pegue los datos extraídos con la macro SUNAT (formato tabulado de 21 columnas). Soporta RUC 10 (persona natural + empresa + vínculo), RUC 20/30 (empresa jurídica) y representantes legales.",
     leder_individual: "Pegue el reporte individual de LEDER DATA (bloques DNI/NOMBRES/APELLIDOS/...).",
     leder_telegram: "Pegue o arrastra el texto exportado de Telegram con las respuestas del bot @LEDER_DATA_BOT. Se detecta automáticamente META, FAMILIA, EMPRESAS, SUNAT y datos complementarios.",
+    transparencia: "Datos de ordenes de compra/servicio (OC/OS) del portal de transparencia, pegados desde Excel. 12 columnas tabuladas: N°, Tipo de Orden, Número de orden, Tipo de Contratación, Descripción, Nro. Exp. SIAF, Fecha de Emisión, Fecha de Compromiso, Estado, Monto, RUC, Denominación. Las filas con Estado 'Anulada' se omiten automaticamente.",
 };
 var IMP_PLACEHOLDERS = {
     auto: "Pegue aquí los datos a importar (cualquier formato soportado)...",
@@ -725,6 +726,7 @@ var IMP_PLACEHOLDERS = {
     sunat_macro: "INGRESAR EL NUMERO DE RUC | Número de RUC: | Tipo Contribuyente: | ...\n10027726459 | 10027726459 - JARAMILLO CALLE RICARDO MERCEDES | PERSONA NATURAL SIN NEGOCIO...",
     leder_individual: "DNI: 12345678\nNOMBRES: JUAN CARLOS\nAPELLIDOS: OLANO ROMERO\n...",
     leder_telegram: "Pegue aquí el contenido de los archivos HTML exportados de Telegram...",
+    transparencia: "1\tO/C\t17\tContrataciones hasta 8 UIT\tADQUISICION DE UTILES...\t243\t2023-02-06\t2023-02-06\tDevengada\tS/. 647\t20601755379\tNAUH BUSINESS GROUP E.I.R.L",
 };
 
 function impActualizarVista() {

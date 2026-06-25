@@ -294,6 +294,7 @@ class BusquedaEmpresaOut(BaseModel):
 
 FORMATOS_IMPORTACION = (
     "auto", "csv", "ruc_batch", "sunat_macro", "leder_individual", "leder_telegram",
+    "transparencia",
 )
 
 class ImportarRequest(BaseModel):
@@ -302,7 +303,7 @@ class ImportarRequest(BaseModel):
     etiqueta: Optional[str] = None
     formato: Optional[str] = Field(
         "auto",
-        description="auto | csv | ruc_batch | sunat_macro | leder_individual | leder_telegram",
+        description="auto | csv | ruc_batch | sunat_macro | leder_individual | leder_telegram | transparencia",
     )
 
 

@@ -18,8 +18,11 @@ Formatos soportados (auto-detectados o forzados via `formato`):
                           (ex modo individual de /api/db/importar-inteligente)
     - leder_telegram    : export HTML de Telegram del bot LEDER_DATA_BOT
                           (ex /api/importar/leder-telegram, delega en leder_parser.py)
+    - transparencia     : datos tabulados de ordenes de compra (OC/OS) del portal
+                          de transparencia / SEACE, pegados desde Excel
 """
 
+import json
 import re
 from datetime import datetime
 from typing import Optional, List
@@ -225,6 +228,15 @@ def detectar_formato(datos: ImportarRequest) -> str:
     num_tabs = primera_data.count("\t")
     if re.match(r"^\d{11}\t", primera_data) and num_tabs >= 10:
         return "sunat_macro"
+
+    # Detectar transparencia (OC/OS): cabecera del Excel, o >=11 tabs con O/C o O/S
+    if re.search(r"^(N[°º]|RUC|Tipo\s+de)", primera_linea, re.IGNORECASE):
+        # Verificar que tenga al menos 11 tabs (12 columnas del Excel)
+        if num_tabs >= 11:
+            return "transparencia"
+    if re.match(r"^\d{1,4}\t", primera_data) and num_tabs >= 11:
+        if re.search(r"\b(O/C|O/S)\b", primera_data):
+            return "transparencia"
 
     # Heuristica RUC batch: primera linea tabulada o "11digitos resto"
     if "\t" in primera_linea or (len(primera_linea) >= 11 and primera_linea[2:10].isdigit()):
@@ -616,6 +628,136 @@ def _importar_leder_telegram(db: Session, texto: str) -> ImportOut:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# TRANSPARENCIA (OC/OS del portal de transparencia / SEACE)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _acumular_contrato_en_notas(empresa: Empresa, contrato: dict):
+    """Acumula un contrato (OC/OS) en Empresa.notas como array JSON."""
+    if empresa.notas:
+        try:
+            data = json.loads(empresa.notas)
+            if isinstance(data, dict) and "contratos" in data:
+                data["contratos"].append(contrato)
+            else:
+                data = {"contratos": [data, contrato]}
+        except (json.JSONDecodeError, TypeError):
+            data = {"contratos": [{"nota_anterior": str(empresa.notas)}, contrato]}
+    else:
+        data = {"contratos": [contrato]}
+    empresa.notas = json.dumps(data, ensure_ascii=False)
+
+
+def _importar_transparencia(
+    db: Session, texto: str, etiqueta_id: Optional[int], etiqueta_nombre: str = ""
+) -> ImportOut:
+    """
+    Importa ordenes de compra/servicio desde el portal de transparencia (SEACE).
+
+    Formato real del Excel exportado (12 columnas tabuladas):
+      N°  Tipo de Orden  Número de orden  Tipo de Contratación  Descripción...
+      Nro. Exp. SIAF  Fecha de Emisión  Fecha de Compromiso  Estado  Monto  RUC  Denominación o razón Social
+
+    Mapeo de columnas (0-indexed):
+      0: N°                1: Tipo de Orden (O/C, O/S)
+      2: Número de orden    3: Tipo de Contratación
+      4: Descripción        5: Nro. Exp. SIAF
+      6: Fecha de Emisión   7: Fecha de Compromiso
+      8: Estado             9: Monto (formato "S/. 1234.56")
+      10: RUC               11: Denominación o razón Social
+
+    - Se omiten filas con Estado = "Anulada" (col 8).
+    - Por cada fila valida se crea/actualiza la Empresa, se acumula el contrato
+      en notas (JSON) y se etiqueta con la fase.
+    """
+    lineas = texto.strip().split("\n")
+    empresas_creadas = 0
+    empresas_actualizadas = 0
+    contratos_importados = 0
+    errores = []
+
+    for i, linea in enumerate(lineas):
+        linea = linea.strip()
+        if not linea:
+            continue
+
+        # Saltar cabecera (empieza con N°, Nº, RUC, Tipo)
+        if re.search(r"^(N[°º]|RUC|Tipo\s+de)", linea, re.IGNORECASE):
+            continue
+
+        cols = linea.split("\t")
+        if len(cols) < 12:
+            errores.append(f"L{i+1}: columnas insuficientes ({len(cols)} de 12)")
+            continue
+
+        ruc = cols[10].strip()
+        nombre = cols[11].strip()
+
+        if not re.match(r"^\d{11}$", ruc):
+            errores.append(f"L{i+1}: RUC invalido '{ruc}'")
+            continue
+
+        # Estado en col 8 — omitir "Anulada"
+        estado = cols[8].strip()
+        if estado.lower().startswith("anul"):
+            continue
+
+        tipo = cols[1].strip()   # O/C o O/S
+        numero = cols[2].strip()  # Número de orden
+        descripcion = cols[4].strip()  # Descripción
+
+        # Monto en col 9: formato "S/. 1234.56" o "S/. 1,234.56"
+        monto_raw = cols[9].strip()
+        monto_str = monto_raw.replace("S/.", "").replace("s/.", "").strip()
+        monto_str = monto_str.replace(",", "")
+        try:
+            importe = float(monto_str) if monto_str else 0.0
+        except ValueError:
+            importe = 0.0
+
+        fecha = cols[6].strip()  # Fecha de Emisión
+        # Limpiar: "2023-02-06 00:00:00.0" → "2023-02-06"
+        if fecha:
+            fecha = fecha.split()[0]
+
+        empresa, creada = _obtener_o_crear_empresa(db, ruc, nombre)
+        if creada:
+            empresas_creadas += 1
+
+        contrato = {
+            "tipo": tipo,
+            "numero": numero,
+            "descripcion": descripcion,
+            "importe": importe,
+            "fecha": fecha,
+            "estado": estado,
+        }
+        _acumular_contrato_en_notas(empresa, contrato)
+        empresas_actualizadas += 1
+        contratos_importados += 1
+
+        if etiqueta_id:
+            _etiquetar_empresa(db, empresa.id, etiqueta_id)
+
+    partes = []
+    if contratos_importados:
+        partes.append(f"{contratos_importados} contrato(s)")
+    if empresas_creadas:
+        partes.append(f"{empresas_creadas} empresa(s) creada(s)")
+    if empresas_actualizadas:
+        partes.append(f"{empresas_actualizadas} empresa(s) actualizada(s)")
+
+    errores_str = f" ({len(errores)} error(es))" if errores else ""
+    mensaje = f"Transparencia: {', '.join(partes) if partes else 'sin datos validos'}{errores_str}"
+
+    return ImportOut(
+        mensaje=mensaje,
+        empresas_creadas=empresas_creadas,
+        vinculos_creados=contratos_importados,
+        errores=errores[:10],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PUNTO DE ENTRADA ÚNICO
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -624,6 +766,9 @@ _HANDLERS = {
     "sunat_macro": lambda db, datos, etiqueta_id: _importar_sunat_macro(db, datos.texto or "", etiqueta_id, datos.etiqueta or ""),
     "leder_individual": lambda db, datos, etiqueta_id: _importar_leder_individual(db, datos.texto or "", etiqueta_id, datos.etiqueta or ""),
     "leder_telegram": lambda db, datos, etiqueta_id: _importar_leder_telegram(db, datos.texto or ""),
+    "transparencia": lambda db, datos, etiqueta_id: _importar_transparencia(
+        db, datos.texto or "", etiqueta_id, datos.etiqueta or ""
+    ),
 }
 
 
