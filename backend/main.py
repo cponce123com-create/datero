@@ -1416,6 +1416,20 @@ def api_verificar_corregir_lote(
                     db.delete(rel)
                     corregidas += 1
 
+            elif tipo == "relacion_invertida" and relacion_id and origen_id and destino_id and tipo_relacion:
+                rel = db.query(Relacion).filter(Relacion.id == relacion_id).first()
+                if rel and rel.tipo_relacion in ("padre", "madre"):
+                    notas_original = rel.notas
+                    db.delete(rel)
+                    db.add(Relacion(
+                        persona_origen_id=destino_id,
+                        persona_destino_id=origen_id,
+                        tipo_relacion=tipo_relacion,
+                        certeza="documento",
+                        notas=notas_original,
+                    ))
+                    corregidas += 1
+
         except Exception as e:
             errores.append({"idx": len(errores), "tipo": tipo, "error": str(e)[:100]})
 
