@@ -984,6 +984,7 @@ _CATEGORIAS = {
     "empresa_sin_vinculos":       {"label": "Empresas sin vínculos",  "icon": "🏢"},
     "relacion_duplicada":         {"label": "Relaciones duplicadas",  "icon": "🔁"},
     "relacion_auto":              {"label": "Relaciones auto-ref.",   "icon": "🔄"},
+    "relacion_invertida":         {"label": "Relaciones invertidas",  "icon": "🔃"},
 }
 
 
@@ -1130,6 +1131,31 @@ def _ejecutar_verificacion(db: Session, categorias: Optional[list[str]] = None):
                 "mensaje": f"Relacion auto-referencial ({r[2]}): {nom} consigo mismo",
                 "dni": p.dni if p else None,
                 "relacion_id": r[0],
+            })
+
+    # ── 7. Relaciones PADRE/MADRE invertidas (bug LEDER antiguo) ──
+    if _activa("relacion_invertida"):
+        rows = db.execute(sa_text(f"""
+            SELECT r.id, r.persona_origen_id, r.persona_destino_id, r.tipo_relacion, r.notas
+            FROM relaciones r
+            WHERE r.tipo_relacion IN ('padre', 'madre')
+              AND (r.notas LIKE '%LEDER: PADRE%' OR r.notas LIKE '%LEDER: MADRE%')
+            LIMIT {L}
+        """)).fetchall()
+        for r in rows:
+            origen = db.query(Persona).filter(Persona.id == r[1]).first()
+            destino = db.query(Persona).filter(Persona.id == r[2]).first()
+            nom_origen = f"{origen.nombres} {origen.apellido_paterno}" if origen else f"ID {r[1]}"
+            nom_destino = f"{destino.nombres} {destino.apellido_paterno}" if destino else f"ID {r[2]}"
+            observaciones.append({
+                "id": len(observaciones) + 1,
+                "tipo": "relacion_invertida",
+                "gravedad": "alta",
+                "mensaje": f"Relacion '{r[3]}' invertida: {nom_origen} figura como padre/madre de {nom_destino} pero según LEDER deberia ser al reves",
+                "relacion_id": r[0],
+                "origen_id": r[1],
+                "destino_id": r[2],
+                "tipo_relacion": r[3],
             })
 
     return {
@@ -1286,6 +1312,25 @@ def api_verificar_corregir(
             resultado["mensaje"] = "Relacion auto-referencial eliminada"
         else:
             resultado["mensaje"] = "Relacion no encontrada"
+
+    elif tipo == "relacion_invertida" and relacion_id and origen_id and destino_id and tipo_relacion:
+        rel = db.query(Relacion).filter(Relacion.id == relacion_id).first()
+        if rel and rel.tipo_relacion in ("padre", "madre"):
+            notas_original = rel.notas
+            db.delete(rel)
+            # Crear la relacion correcta: familiar (origen) -> ctx (destino)
+            db.add(Relacion(
+                persona_origen_id=destino_id,
+                persona_destino_id=origen_id,
+                tipo_relacion=tipo_relacion,
+                certeza="documento",
+                notas=notas_original,
+            ))
+            db.commit()
+            resultado["corregido"] = True
+            resultado["mensaje"] = f"Relacion '{tipo_relacion}' invertida correctamente"
+        else:
+            resultado["mensaje"] = "Relacion no encontrada o tipo no valido"
 
     return resultado
 
