@@ -523,7 +523,9 @@ def _importar_leder_individual(db: Session, texto: str, etiqueta_id: Optional[in
         if empresa_nombre and empresa_nombre != "No se encontro":
             empresa = db.query(Empresa).filter(Empresa.nombre == empresa_nombre, Empresa.activo == True).first()
             if not empresa:
-                empresa = Empresa(ruc=f"AUTO-{persona.dni}", nombre=empresa_nombre)
+                # RUC sintetico que quepa en VARCHAR(11): "A" + DNI truncado a 10 chars
+                ruc_sintetico = f"A{persona.dni[:10]}"
+                empresa = Empresa(ruc=ruc_sintetico, nombre=empresa_nombre)
                 db.add(empresa)
                 db.flush()
             if _vincular_si_no_existe(db, persona.id, empresa.id, "trabajador"):
