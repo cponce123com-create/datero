@@ -68,6 +68,8 @@
             <button class="sidebar-link" data-view="importar"><i class="fas fa-upload"></i><span>Importaciones</span></button>
             <button class="sidebar-link" data-view="dashboard"><i class="fas fa-chart-bar"></i><span>Dashboard</span></button>
             <button class="sidebar-link" data-view="reportes"><i class="fas fa-file-alt"></i><span>Reportes</span></button>
+            <div class="sidebar-section-title">Análisis</div>
+            <button class="sidebar-link" data-view="comparar"><i class="fas fa-crosshairs"></i><span>Comparar</span></button>
             <div class="sidebar-section-title">Sistema</div>
             <button class="sidebar-link" onclick="abrirVerificador()"><i class="fas fa-check-double"></i><span>Verificador</span></button>
             <button class="sidebar-link" onclick="toggleDarkMode()"><i class="fas fa-palette"></i><span>Tema</span></button>
@@ -259,6 +261,28 @@
                 <div class="card">
                     <div class="card-header"><i class="fas fa-file-alt" style="color:var(--primary);"></i> Reportes</div>
                     <p style="color:var(--muted);">Proximamente...</p>
+                </div>
+            </div>
+
+            <!-- ═══ VIEW: COMPARAR ═══ -->
+            <div class="view" id="view-comparar">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-crosshairs" style="color:var(--primary);"></i> Comparar Personas</div>
+                    <p style="color:var(--color-text-secondary);font-size:0.85rem;margin-bottom:12px;">
+                        Ingresa 2 a 5 DNIs para comparar sus redes familiares, empresas y etiquetas.
+                        Se detectarán automáticamente cruces como: mismo pariente, cadena familiar indirecta,
+                        misma empresa, misma etiqueta.
+                    </p>
+                    <div class="comparar-input-group">
+                        <textarea id="comparar-dnis" class="import-textarea" rows="3"
+                            placeholder="45167775&#10;43617845&#10;-- un DNI por línea o separados por coma, espacio o salto de línea"
+                            style="font-family:var(--font-mono,monospace);font-size:0.9rem;"></textarea>
+                        <button id="btn-comparar" class="btn btn-primary btn-lg" onclick="ejecutarComparacion()" style="margin-top:8px;">
+                            <i class="fas fa-crosshairs"></i> Comparar
+                        </button>
+                    </div>
+                    <div id="comparar-resultados" style="margin-top:16px;"></div>
+                    <div id="comparar-error" class="hidden" style="margin-top:12px;padding:12px;border-radius:8px;background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;"></div>
                 </div>
             </div>
 

@@ -1040,7 +1040,237 @@ body {
 
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 .hero, .stats, .features { animation: fadeInUp 0.6s ease-out; }
-.stat-card { animation: fadeInUp 0.5s ease-out; }
+}.stat-card { animation: fadeInUp 0.5s ease-out; }
+
+/* ─── Comparar Personas ─── */
+
+.comparar-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.stat-card-sm {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+}
+
+.stat-card-sm .stat-num {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--color-primary);
+    display: block;
+    line-height: 1.2;
+}
+
+.stat-card-sm .stat-label {
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+}
+
+.comparar-section {
+    margin-bottom: 24px;
+}
+
+.cruces-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.cruce-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cruce-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow);
+}
+
+.cruce-card-mismo_pariente {
+    border-left: 4px solid #8b5cf6;
+}
+
+.cruce-card-cadena_familiar {
+    border-left: 4px solid #06b6d4;
+}
+
+.cruce-card-misma_empresa {
+    border-left: 4px solid #10b981;
+}
+
+.cruce-card-misma_etiqueta {
+    border-left: 4px solid #f59e0b;
+}
+
+.cruce-card-default {
+    border-left: 4px solid #94a3b8;
+}
+
+.cruce-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.cruce-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.cruce-tipo {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+    margin-bottom: 2px;
+    font-weight: 600;
+}
+
+.cruce-descripcion {
+    font-size: 0.9rem;
+    color: var(--color-text);
+    line-height: 1.4;
+}
+
+.personas-comparadas-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.persona-comparada-card {
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+}
+
+.pc-header {
+    font-size: 1rem;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--color-border);
+    transition: color 0.15s ease;
+}
+
+.pc-header:hover {
+    color: var(--color-primary);
+}
+
+.pc-dni {
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    font-weight: 400;
+}
+
+.pc-section {
+    margin-bottom: 12px;
+}
+
+.pc-section-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
+}
+
+.pc-parentescos-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pc-parentesco-item {
+    display: flex;
+    gap: 6px;
+    font-size: 0.82rem;
+    align-items: baseline;
+}
+
+.pc-parentesco-tipo {
+    color: var(--color-primary);
+    font-weight: 500;
+    flex-shrink: 0;
+    min-width: 72px;
+}
+
+.pc-parentesco-nombre {
+    color: var(--color-text);
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.pc-parentesco-nombre:hover {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
+
+.pc-more {
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    margin-top: 4px;
+    font-style: italic;
+}
+
+.pc-empresas-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pc-empresa-item {
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: color 0.15s;
+    padding: 2px 0;
+}
+
+.pc-empresa-item:hover {
+    color: var(--color-primary);
+}
+
+.pc-cargo {
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+}
+
+.pc-etiquetas-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.pc-etiqueta-tag {
+    display: inline-block;
+    background: #dbeafe;
+    color: #1e40af;
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+@media (max-width: 768px) {
+    .personas-comparadas-grid {
+        grid-template-columns: 1fr;
+    }
+    .comparar-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
 
 @media (max-width: 768px) {
     .hero { flex-direction: column; text-align: center; padding: 40px 16px; }

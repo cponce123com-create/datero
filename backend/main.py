@@ -58,6 +58,7 @@ from schemas import (
     EmpresaEtiquetaAssign, EmpresaEtiquetaOut,
     FichaEmpresaOut, BusquedaEmpresaOut,
     TagStats, EmpresaStats, StatsOut,
+    CompararRequest, CompararResponse,
 )
 from services.relacion_service import (
     crear_relacion_bidireccional,
@@ -970,6 +971,23 @@ def api_search(q: str = Query(..., min_length=2), db: Session = Depends(get_db),
             "dni": e.ruc, "tipo": "empresa"
         })
     return results[:10]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPARAR PERSONAS (detección de cruces)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/comparar", response_model=CompararResponse)
+def api_comparar(
+    datos: CompararRequest,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(get_current_user),
+):
+    """Compara 2-5 personas y detecta cruces: mismos parientes,
+    cadenas familiares, empresas compartidas, etiquetas compartidas."""
+    from services.comparar_service import CompararService
+    service = CompararService(db)
+    return service.comparar(datos.dnis)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

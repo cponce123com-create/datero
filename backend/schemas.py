@@ -377,3 +377,54 @@ class StatsOut(BaseModel):
     personas_por_etiqueta: List[TagStats] = []
     personas_por_empresa: List[EmpresaStats] = []
     empresas_por_etiqueta: List[TagStats] = []
+
+
+# ─── Comparar Personas ─────────────────────────────────────────────────────────
+
+class CompararRequest(BaseModel):
+    dnis: List[str] = Field(..., min_length=2, max_length=5, description="DNIs de personas a comparar (2-5)")
+
+class CruceMismoPariente(BaseModel):
+    tipo: str = "mismo_pariente"
+    descripcion: str
+    pariente_dni: str
+    pariente_nombre: str
+    parentesco_con_a: str
+    parentesco_con_b: str
+
+class CruceCadena(BaseModel):
+    tipo: str = "cadena_familiar"
+    descripcion: str
+    persona_a_dni: str
+    persona_b_dni: str
+    pasos: List[dict]
+
+class CruceEmpresa(BaseModel):
+    tipo: str = "misma_empresa"
+    descripcion: str
+    empresa_ruc: str
+    empresa_nombre: str
+    personas: List[str]
+
+class CruceEtiqueta(BaseModel):
+    tipo: str = "misma_etiqueta"
+    descripcion: str
+    etiqueta: str
+    personas: List[str]
+
+class CruceUbicacion(BaseModel):
+    tipo: str = "misma_ubicacion"
+    descripcion: str
+    ubicacion: str
+
+class PersonaConParentescos(BaseModel):
+    dni: str
+    nombre_completo: str
+    parentescos: List[dict] = []
+    empresas: List[dict] = []
+    etiquetas: List[str] = []
+
+class CompararResponse(BaseModel):
+    personas: List[PersonaConParentescos]
+    cruces: List[dict] = []
+    estadisticas: dict = {}

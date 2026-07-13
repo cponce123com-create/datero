@@ -1392,3 +1392,181 @@ async function corregirTodas() {
 window.abrirVerificador = abrirVerificador;
 window.corregirObservacion = corregirObservacion;
 window.corregirTodas = corregirTodas;
+
+
+/* ─── COMPARAR PERSONAS ─── */
+
+window.ejecutarComparacion = async function() {
+    var ta = document.getElementById("comparar-dnis");
+    var resultadosDiv = document.getElementById("comparar-resultados");
+    var errorDiv = document.getElementById("comparar-error");
+    var btn = document.getElementById("btn-comparar");
+
+    errorDiv.classList.add("hidden");
+    resultadosDiv.innerHTML = '<div class="loading-text"><span class="spinner"></span> Comparando personas...</div>';
+
+    // Parsear DNIs: separados por salto de linea, coma, espacio o punto y coma
+    var raw = ta.value.trim();
+    var dnis = raw.split(/[\n,;\s]+/).map(function(d) { return d.trim(); }).filter(function(d) { return d.length >= 6 && d.length <= 20 && /^\d+$/.test(d); });
+
+    if (dnis.length < 2) {
+        errorDiv.textContent = "⚠ Ingresa al menos 2 DNIs validos (numericos).";
+        errorDiv.classList.remove("hidden");
+        resultadosDiv.innerHTML = "";
+        return;
+    }
+    if (dnis.length > 5) {
+        errorDiv.textContent = "⚠ Maximo 5 personas a la vez. Encontrados: " + dnis.length;
+        errorDiv.classList.remove("hidden");
+        resultadosDiv.innerHTML = "";
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Comparando...';
+
+    try {
+        var data = await af(A + "/comparar", {
+            method: "POST",
+            body: JSON.stringify({ dnis: dnis }),
+        });
+        renderComparacion(data, resultadosDiv);
+    } catch (err) {
+        errorDiv.textContent = "Error: " + err.message;
+        errorDiv.classList.remove("hidden");
+        resultadosDiv.innerHTML = "";
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-crosshairs"></i> Comparar';
+};
+
+
+function renderComparacion(data, container) {
+    var html = "";
+
+    // ── Estadisticas ──
+    var stats = data.estadisticas || {};
+    html += '<div class="comparar-stats">';
+    html += '<div class="stat-card-sm"><span class="stat-num">' + (stats.total_personas_comparadas || 0) + '</span><span class="stat-label">Comparadas</span></div>';
+    html += '<div class="stat-card-sm"><span class="stat-num">' + (stats.total_personas_involucradas || 0) + '</span><span class="stat-label">Involucradas</span></div>';
+    html += '<div class="stat-card-sm"><span class="stat-num">' + (stats.total_cruces_encontrados || 0) + '</span><span class="stat-label">Cruces</span></div>';
+    html += '<div class="stat-card-sm"><span class="stat-num">' + (stats.total_parientes_unicos || 0) + '</span><span class="stat-label">Parientes únicos</span></div>';
+    html += '</div>';
+
+    // ── Cruces encontrados ──
+    var cruces = data.cruces || [];
+    if (cruces.length > 0) {
+        html += '<div class="comparar-section"><div class="section-title">🔗 Cruces Encontrados <span class="section-badge">' + cruces.length + '</span></div>';
+        html += '<div class="cruces-list">';
+        cruces.forEach(function(c) {
+            var icono = "🔗";
+            if (c.tipo === "mismo_pariente") icono = "👤";
+            else if (c.tipo === "misma_empresa") icono = "🏢";
+            else if (c.tipo === "misma_etiqueta") icono = "🏷️";
+            else if (c.tipo === "cadena_familiar") icono = "🔗";
+
+            var claseBg = "cruce-card-" + (c.tipo || "default");
+            html += '<div class="cruce-card ' + claseBg + '">';
+            html += '<div class="cruce-icon">' + icono + '</div>';
+            html += '<div class="cruce-body">';
+            html += '<div class="cruce-tipo">' + c.tipo.replace(/_/g, " ") + '</div>';
+            html += '<div class="cruce-descripcion">' + es(c.descripcion || "") + '</div>';
+            html += '</div>';
+            html += '</div>';
+        });
+        html += '</div></div>';
+    } else {
+        html += '<div class="comparar-section"><div class="section-title">🔗 Cruces</div>';
+        html += '<p style="color:var(--color-text-secondary);padding:16px 0;">No se encontraron cruces directos entre estas personas.</p></div>';
+    }
+
+    // ── Detalle por persona ──
+    var personas = data.personas || [];
+    html += '<div class="comparar-section"><div class="section-title">👤 Personas <span class="section-badge">' + personas.length + '</span></div>';
+    html += '<div class="personas-comparadas-grid">';
+
+    personas.forEach(function(p) {
+        html += '<div class="card persona-comparada-card">';
+        html += '<div class="pc-header" onclick="cf(\'' + es(p.dni) + '\')"><strong>' + es(p.nombre_completo) + '</strong> <span class="pc-dni">DNI: ' + es(p.dni) + '</span></div>';
+
+        // Parentescos
+        var pars = p.parentescos || [];
+        if (pars.length > 0) {
+            html += '<div class="pc-section"><div class="pc-section-title">🧬 Parentescos (' + pars.length + ')</div>';
+            html += '<div class="pc-parentescos-list">';
+            // Mostrar solo los primeros 15
+            var maxShow = 15;
+            pars.slice(0, maxShow).forEach(function(par) {
+                html += '<div class="pc-parentesco-item"><span class="pc-parentesco-tipo">' + es(par.tipo_parentesco || "") + '</span>';
+                html += '<span class="pc-parentesco-nombre" data-dni="' + es(par.dni || "") + '">' + es(par.nombres || "") + ' ' + es(par.apellidos || "") + '</span></div>';
+            });
+            if (pars.length > maxShow) {
+                html += '<div class="pc-more">... y ' + (pars.length - maxShow) + ' más</div>';
+            }
+            html += '</div></div>';
+        }
+
+        // Empresas
+        var emps = p.empresas || [];
+        if (emps.length > 0) {
+            html += '<div class="pc-section"><div class="pc-section-title">🏢 Empresas (' + emps.length + ')</div>';
+            html += '<div class="pc-empresas-list">';
+            // Agrupar por RUC para mostrar solo una vez
+            var seenRucs = {};
+            emps.forEach(function(emp) {
+                if (seenRucs[emp.ruc]) return;
+                seenRucs[emp.ruc] = true;
+                html += '<div class="pc-empresa-item" data-ruc="' + es(emp.ruc) + '">' + es(emp.nombre) + ' <span class="pc-cargo">(' + es(emp.cargo) + ')</span></div>';
+            });
+            html += '</div></div>';
+        }
+
+        // Etiquetas
+        var etqs = p.etiquetas || [];
+        if (etqs.length > 0) {
+            html += '<div class="pc-section"><div class="pc-section-title">🏷️ Etiquetas</div>';
+            html += '<div class="pc-etiquetas-list">';
+            etqs.forEach(function(etq) {
+                html += '<span class="pc-etiqueta-tag">' + es(etq) + '</span>';
+            });
+            html += '</div></div>';
+        }
+
+        html += '</div>';
+    });
+    html += '</div></div>';
+
+    // ── Event listeners ──
+    container.innerHTML = html;
+
+    // Click en parentesco → abre ficha
+    container.querySelectorAll(".pc-parentesco-nombre").forEach(function(el) {
+        el.addEventListener("click", function() {
+            var dni = el.dataset.dni;
+            if (dni) {
+                document.querySelector('.sidebar-link[data-view="personas"]').click();
+                cf(dni);
+            }
+        });
+    });
+
+    // Click en empresa → abre ficha
+    container.querySelectorAll(".pc-empresa-item").forEach(function(el) {
+        el.addEventListener("click", function() {
+            var ruc = el.dataset.ruc;
+            if (ruc) {
+                document.querySelector('.sidebar-link[data-view="empresas"]').click();
+                cfEmpresa(ruc);
+            }
+        });
+    });
+
+    // Click en header persona → abre ficha
+    container.querySelectorAll(".pc-header").forEach(function(el) {
+        el.style.cursor = "pointer";
+    });
+}
+
+window.renderComparacion = renderComparacion;
+window.ejecutarComparacion = ejecutarComparacion;
