@@ -1407,7 +1407,35 @@ window.ejecutarComparacion = async function() {
 
     // Parsear DNIs: separados por salto de linea, coma, espacio o punto y coma
     var raw = ta.value.trim();
-    var dnis = raw.split(/[\n,;\s]+/).map(function(d) { return d.trim(); }).filter(function(d) { return d.length >= 6 && d.length <= 20 && /^\d+$/.test(d); });
+
+    // Auto-detección: si el texto parece LEDERDATA o reporte, extraer DNIs principales
+    var dnis;
+    if (raw.includes("[#LEDERDATA.NET]") || raw.includes("META |") || raw.includes("Credits :")) {
+        // Extraer DNIs de secciones META [PREMIUM] que son personas principales
+        // Formato: "DNI : 45167775 - 1" o "/meta 45167775" o "DNI : 45167775"
+        var metaDnis = [];
+        var lines = raw.split("\n");
+        for (var li = 0; li < lines.length; li++) {
+            var l = lines[li].trim();
+            // Detectar líneas de DNI principal: "/meta 45167775" o "DNI : 45167775 - 5" (las primeras ocurrencias)
+            var m1 = l.match(/^\/meta\s+(\d{6,})$/);
+            var m2 = l.match(/^DNI\s*:\s*(\d{6,})\s*-\s*\d/);
+            if (m1 && metaDnis.indexOf(m1[1]) === -1) metaDnis.push(m1[1]);
+            if (m2 && metaDnis.indexOf(m2[1]) === -1) metaDnis.push(m2[1]);
+        }
+        // Si vienen de /nm (nombre search), también extraer
+        if (metaDnis.length === 0) {
+            // Fallback: extraer todos los DNIs únicos de 6-8 dígitos
+            var allDnis = raw.match(/\b(\d{8})\b/g);
+            if (allDnis) {
+                metaDnis = [...new Set(allDnis)];
+            }
+        }
+        dnis = metaDnis;
+    } else {
+        // Parseo normal: separados por salto de linea, coma, espacio o punto y coma
+        dnis = raw.split(/[\n,;\s]+/).map(function(d) { return d.trim(); }).filter(function(d) { return d.length >= 6 && d.length <= 20 && /^\d+$/.test(d); });
+    }
 
     if (dnis.length < 2) {
         errorDiv.textContent = "⚠ Ingresa al menos 2 DNIs validos (numericos).";
