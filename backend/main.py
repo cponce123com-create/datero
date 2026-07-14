@@ -986,8 +986,20 @@ def api_comparar(
     """Compara 2-5 personas y detecta cruces: mismos parientes,
     cadenas familiares, empresas compartidas, etiquetas compartidas."""
     from services.comparar_service import CompararService
-    service = CompararService(db)
-    return service.comparar(datos.dnis)
+    try:
+        service = CompararService(db)
+        return service.comparar(datos.dnis)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback, io
+        buf = io.StringIO()
+        traceback.print_exc(file=buf)
+        detalle = buf.getvalue()[:500]
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al comparar personas: {str(e)}",
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

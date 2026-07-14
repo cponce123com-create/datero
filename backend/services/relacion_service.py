@@ -18,7 +18,6 @@ from crud import (
     obtener_persona_por_dni,
     registrar_auditoria,
 )
-from parentesco import invalidar_cache_parentesco
 
 # Mapeo de tipos de relación a sus inversos
 INVERSO = {
@@ -125,7 +124,6 @@ def crear_relacion_bidireccional(
         )
 
         db.commit()
-        invalidar_cache_parentesco()
 
         return {
             "mensaje": f"Relación '{tipo_directo}' creada: {origen.nombre_completo} → {destino.nombre_completo}",
@@ -180,7 +178,6 @@ def eliminar_relacion_bidireccional(
             "DELETE", "Relacion", str(relacion_id),
         )
         db.commit()
-        invalidar_cache_parentesco()
         return True
     except Exception:
         db.rollback()

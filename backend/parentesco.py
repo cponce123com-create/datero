@@ -16,25 +16,12 @@ Invalidacion de cache:
   invalidar_cache_parentesco()  # Al crear/eliminar una relacion
 """
 
-from functools import lru_cache
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from models import Persona
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# INVALIDACION DE CACHE
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def invalidar_cache_parentesco():
-    """
-    Limpia el cache LRU de la CTE.
-    Llamar despues de crear, modificar o eliminar relaciones/personas.
-    """
-    _cte_cached.cache_clear()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -310,24 +297,8 @@ def _parentesco_a_texto(tipo_base: str, genero: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FUNCION PRINCIPAL (con cache)
+# FUNCION PRINCIPAL
 # ═══════════════════════════════════════════════════════════════════════════════
-
-@lru_cache(maxsize=256)
-def _cte_cached(persona_id: int) -> Tuple[Tuple[int, str, int], ...]:
-    """
-    Version cacheada de la CTE (invalida al reiniciar la app).
-    """
-    from database import SessionLocal
-    session = SessionLocal()
-    try:
-        result = _cte_parentesco_completo(session, persona_id)
-        return tuple(sorted(
-            (r["pariente_id"], r["tipo"], r["pasos"]) for r in result
-        ))
-    finally:
-        session.close()
-
 
 def calcular_parentesco(db: Session, dni: str) -> List[Dict]:
     """
@@ -338,12 +309,19 @@ def calcular_parentesco(db: Session, dni: str) -> List[Dict]:
     if not persona:
         return []
 
-    resultados_cte = _cte_cached(persona.id)
-    if not resultados_cte:
+    try:
+        resultados_cte_raw = _cte_parentesco_completo(db, persona.id)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Error en CTE parentesco para persona_id=%s: %s", persona.id, e
+        )
+        return []
+    if not resultados_cte_raw:
         return []
 
     # Obtener personas en una sola consulta IN
-    ids_parientes = [r[0] for r in resultados_cte]
+    ids_parientes = [r["pariente_id"] for r in resultados_cte_raw]
     parientes = db.query(Persona).filter(
         Persona.id.in_(ids_parientes), Persona.activo == True
     ).all()
@@ -353,7 +331,10 @@ def calcular_parentesco(db: Session, dni: str) -> List[Dict]:
     genero_cache: Dict[int, str] = {}
 
     salida = []
-    for pariente_id, tipo_base, pasos in resultados_cte:
+    for r in resultados_cte_raw:
+        pariente_id = r["pariente_id"]
+        tipo_base = r["tipo"]
+        pasos = r["pasos"]
         pariente = parientes_dict.get(pariente_id)
         if not pariente:
             continue

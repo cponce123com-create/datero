@@ -26,7 +26,6 @@ from schemas import (
     CruceMismoPariente, CruceCadena, CruceEmpresa, CruceEtiqueta, CruceUbicacion,
 )
 from parentesco import calcular_parentesco
-from services.persona_service import get_relaciones_directas
 
 logger = logging.getLogger(__name__)
 
